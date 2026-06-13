@@ -59,8 +59,9 @@ Note: on Resend's free plan without a custom domain, emails come from `onboardin
 
 ## How the family uses it
 
-- **Parents:** open the app link → Create Account → choose **Parent**. No code needed. Add your children in **Settings**, then tap any day on the calendar to post a shift.
-- **Family members / nannies:** Create Account → choose **Family Member / Nanny** → enter the family code **WATCH1** (parents can see it in Settings).
+- **First parent:** open the app link → Create Account → choose **Parent**, leave the invite code blank. This creates your family and gives it a random invite code (shown in **Settings**).
+- **Everyone else (second parent, family members, nannies):** use the invite link a parent shares from **Settings** (it opens straight to Create Account with the code filled in), or choose Create Account and enter the family code shown in Settings. Pick **Parent** if they should also have full admin access (e.g. a second parent), or **Family Member / Nanny** for view/claim access.
+- Add your children in **Settings**, then tap any day on the calendar to post a shift.
 - **Phone home screen:** open the link on a phone → Share button (iPhone) or menu (Android) → **Add to Home Screen**. It looks and feels like an installed app.
 - **Skylight / Apple / Google Calendar:** tap **Export iCal** under the calendar and open the downloaded file.
 
