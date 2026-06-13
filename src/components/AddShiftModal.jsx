@@ -3,13 +3,16 @@ import { C, fontSans } from "../lib/theme";
 import { prettyDateFull } from "../lib/time";
 import { Btn, Input, Modal } from "./UI";
 
+const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Doctor Visit", "Event", "Date Night", "Overnight"];
+
 export default function AddShiftModal({ open, onClose, selectedDate, onAdd, childrenList }) {
   const [start, setStart] = useState("07:00");
   const [end, setEnd] = useState("19:00");
   const [kids, setKids] = useState([]);
+  const [label, setLabel] = useState("");
 
   useEffect(() => {
-    if (open) setKids(childrenList.map((c) => c.name));
+    if (open) { setKids(childrenList.map((c) => c.name)); setLabel(""); }
   }, [open, childrenList]);
 
   const toggleKid = (k) => setKids((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
@@ -25,6 +28,16 @@ export default function AddShiftModal({ open, onClose, selectedDate, onAdd, chil
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1 }}><Input label="Start Time" type="time" value={start} onChange={(e) => setStart(e.target.value)} /></div>
           <div style={{ flex: 1 }}><Input label="End Time" type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+        </div>
+
+        <Input label="Description (optional)" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. School Drop Off, Doctor Visit, Event" />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: -8, marginBottom: 16 }}>
+          {LABEL_SUGGESTIONS.map((s) => (
+            <button key={s} onClick={() => setLabel(s)} style={{
+              padding: "4px 12px", borderRadius: 20, cursor: "pointer", fontFamily: fontSans, fontWeight: 600, fontSize: 12,
+              border: `1.5px solid ${C.softBorder}`, background: C.white, color: C.textMuted,
+            }}>{s}</button>
+          ))}
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -49,7 +62,7 @@ export default function AddShiftModal({ open, onClose, selectedDate, onAdd, chil
           )}
         </div>
 
-        <Btn onClick={() => { onAdd(selectedDate, { start, end, kids }); onClose(); }} style={{ width: "100%" }}>
+        <Btn onClick={() => { onAdd(selectedDate, { start, end, kids, label }); onClose(); }} style={{ width: "100%" }}>
           Post Shift
         </Btn>
       </div>
