@@ -4,14 +4,14 @@ import { todayKey } from "../lib/time";
 import { Badge, Btn } from "./UI";
 
 export default function SettingsPanel({
-  members, childrenList, shifts, familyCode, currentUser,
+  isParent, members, childrenList, shifts, familyCode, currentUser,
   families, onRemoveMember, onAddChild, onRemoveChild,
-  onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onRenameFamily,
+  onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
 }) {
   const [renamingId, setRenamingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
   const [newChild, setNewChild] = useState("");
-  const [tab, setTab] = useState("members");
+  const [tab, setTab] = useState(isParent ? "members" : "calendars");
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const inviteLink = `${window.location.origin}${window.location.pathname}?code=${familyCode}`;
@@ -22,8 +22,14 @@ export default function SettingsPanel({
   const [placeholderBusy, setPlaceholderBusy] = useState(false);
 
   const [joinCode, setJoinCode] = useState("");
+  const [joinRelationship, setJoinRelationship] = useState("");
   const [joinErr, setJoinErr] = useState("");
   const [joinBusy, setJoinBusy] = useState(false);
+
+  const [newFamName, setNewFamName] = useState("");
+  const [newFamRelationship, setNewFamRelationship] = useState("");
+  const [createErr, setCreateErr] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
 
   const today = todayKey();
   const upcoming = Object.entries(shifts)
@@ -79,12 +85,27 @@ export default function SettingsPanel({
     }
     setJoinBusy(true);
     try {
-      await onJoinFamily(joinCode.trim());
+      await onJoinFamily(joinCode.trim(), joinRelationship.trim());
       setJoinCode("");
+      setJoinRelationship("");
     } catch (e) {
       setJoinErr(e.message || "Could not link that calendar.");
     } finally {
       setJoinBusy(false);
+    }
+  }
+
+  async function createCalendar() {
+    setCreateErr("");
+    setCreateBusy(true);
+    try {
+      await onCreateFamily({ name: newFamName.trim(), relationship: newFamRelationship.trim() });
+      setNewFamName("");
+      setNewFamRelationship("");
+    } catch (e) {
+      setCreateErr(e.message || "Could not create that calendar.");
+    } finally {
+      setCreateBusy(false);
     }
   }
 
@@ -123,7 +144,7 @@ export default function SettingsPanel({
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18, borderBottom: `1.5px solid ${C.softBorder}`, flexWrap: "wrap" }}>
-        {["members", "children", "calendars"].map((t) => (
+        {(isParent ? ["members", "children", "calendars"] : ["calendars"]).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: "8px 20px", borderRadius: "10px 10px 0 0", border: "none", cursor: "pointer",
             fontFamily: fontSans, fontWeight: 700, fontSize: 13, textTransform: "capitalize",
@@ -150,7 +171,7 @@ export default function SettingsPanel({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fontSans, fontSize: 14, fontWeight: 700, color: C.text }}>{u.name}</div>
                 <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.isPlaceholder ? "No login — added by a parent" : u.email}
+                  {u.isPlaceholder ? "No login - added by a parent" : u.email}
                 </div>
               </div>
               <Badge color={u.role === "parent" ? C.clay : C.sage}>{u.tag || u.role}</Badge>
@@ -196,7 +217,7 @@ export default function SettingsPanel({
         <div>
           {childrenList.length === 0 && (
             <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted, padding: "14px 16px", background: C.white, borderRadius: 12, border: `1.5px dashed ${C.softBorder}`, marginBottom: 8 }}>
-              Add your children below — their names will appear when posting shifts.
+              Add your children below - their names will appear when posting shifts.
             </div>
           )}
           {childrenList.map((c) => (
@@ -227,7 +248,7 @@ export default function SettingsPanel({
       {tab === "calendars" && (
         <div>
           <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-            Link another family's calendar — for example a sibling's — so you can switch between calendars and help cover their shifts too. Ask them for their family code in their Settings.
+            Link another family's calendar - for example a sibling's - so you can switch between calendars and help cover their shifts too. Ask them for their family code in their Settings.
           </div>
           {(families || []).map((f) => (
             <div key={f.id} style={{
@@ -240,10 +261,14 @@ export default function SettingsPanel({
                     {f.name || f.code}
                   </div>
                   <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, letterSpacing: "0.06em" }}>
-                    {f.isHome ? "Your family" : "Linked calendar"}{f.name ? ` · code ${f.code}` : ""}
+                    {f.isHome ? "Your family" : "Linked calendar"}{f.name ? ` - code ${f.code}` : ""}
+                    {!f.isHome && f.relationship ? ` - you're ${f.relationship}` : ""}
                   </div>
                 </div>
-                {onRenameFamily && (
+                {!f.isHome && (
+                  <Badge color={f.role === "parent" ? C.clay : C.sage}>{f.relationship || (f.role === "parent" ? "Parent" : "Family")}</Badge>
+                )}
+                {(f.isHome ? isParent : f.role === "parent") && onRenameFamily && (
                   <button onClick={() => { setRenamingId(renamingId === f.id ? null : f.id); setNameInput(f.name || ""); }} style={{
                     background: "none", border: "none", color: C.clay, cursor: "pointer",
                     fontSize: 13, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
@@ -283,10 +308,49 @@ export default function SettingsPanel({
                     padding: "10px 14px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none", textTransform: "uppercase", letterSpacing: "0.1em",
                   }} />
               </div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <input value={joinRelationship} onChange={(e) => setJoinRelationship(e.target.value)} placeholder="Your title (e.g. Auntie)"
+                  style={{
+                    width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
+                    padding: "10px 14px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none",
+                  }} />
+              </div>
               <Btn small onClick={joinCalendar} disabled={joinBusy}>{joinBusy ? "Linking..." : "Link Calendar"}</Btn>
+            </div>
+            <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
+              Your title shows up when you're viewing this calendar (e.g. "viewing Smith Family calendar (as Auntie)").
             </div>
             {joinErr && <div style={{ color: C.dustyRose, fontFamily: fontSans, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{joinErr}</div>}
           </div>
+
+          {onCreateFamily && (
+            <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", marginTop: 14, border: `1.5px dashed ${C.softBorder}` }}>
+              <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 4 }}>
+                Create your own calendar
+              </div>
+              <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+                Start a brand-new calendar for your own kids - you'll be the parent/admin of this one, with your own family code to share.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <input value={newFamName} onChange={(e) => setNewFamName(e.target.value)} placeholder="Calendar name (e.g. Smith Family)"
+                    style={{
+                      width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
+                      padding: "10px 14px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none",
+                    }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <input value={newFamRelationship} onChange={(e) => setNewFamRelationship(e.target.value)} placeholder="Your title (e.g. Parent)"
+                    style={{
+                      width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
+                      padding: "10px 14px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none",
+                    }} />
+                </div>
+                <Btn small onClick={createCalendar} disabled={createBusy}>{createBusy ? "Creating..." : "Create Calendar"}</Btn>
+              </div>
+              {createErr && <div style={{ color: C.dustyRose, fontFamily: fontSans, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{createErr}</div>}
+            </div>
+          )}
         </div>
       )}
     </div>
