@@ -56,9 +56,11 @@ export default function UpcomingShifts({ shifts, onShiftClick }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: fontSans, fontSize: 14, fontWeight: 700, color: C.text }}>
                 {fmt12(shift.start)} – {fmt12(shift.end)}
+                {shift.label && <span style={{ color: C.clay, fontWeight: 700 }}> · {shift.label}</span>}
               </div>
               <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {shift.kids?.length ? shift.kids.join(", ") : "All kids"}
+                {shift.postedByName && <span> · posted by {shift.postedByName.split(" ")[0]}</span>}
               </div>
             </div>
             <div>
