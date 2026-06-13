@@ -26,24 +26,37 @@ export default function App() {
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [shiftModalKey, setShiftModalKey] = useState(null);
   const [addModalKey, setAddModalKey] = useState(null);
+  const [families, setFamilies] = useState([]);
+  const [activeFamilyId, setActiveFamilyId] = useState(null);
   const refreshTimer = useRef(null);
 
-  const refresh = useCallback(async (u) => {
+  const refresh = useCallback(async (u, famId) => {
     const who = u || user;
     if (!who) return;
+    const fid = famId || activeFamilyId || who.familyId;
     try {
-      const data = await store.fetchAll(who);
+      const data = await store.fetchAll(who, fid);
       setMembers(data.members);
       setChildren(data.children);
       setShifts(data.shifts);
       setNotifications(data.notifications);
     } catch (e) { /* transient network issue — keep current data */ }
-  }, [user]);
+  }, [user, activeFamilyId]);
+
+  async function refreshFamilies(u) {
+    try {
+      const list = await store.listFamilies(u);
+      setFamilies(list);
+    } catch (e) { /* ignore */ }
+  }
 
   // restore session on load
   useEffect(() => {
     store.restoreSession().then((u) => {
-      if (u) setUser(u);
+      if (u) {
+        setUser(u);
+        setActiveFamilyId(u.familyId);
+      }
       setBooted(true);
     });
   }, []);
@@ -51,24 +64,30 @@ export default function App() {
   // fetch + live sync while signed in
   useEffect(() => {
     if (!user) return;
-    refresh(user);
+    refresh(user, activeFamilyId);
+    refreshFamilies(user);
     const unsub = store.subscribe(user, () => {
       clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => refresh(user), 250);
+      refreshTimer.current = setTimeout(() => refresh(user, activeFamilyId), 250);
     });
     return () => { unsub(); clearTimeout(refreshTimer.current); };
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, activeFamilyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── derived ──────────────────────────────────────────────────────────────
+
+  const viewingHome = !activeFamilyId || activeFamilyId === user?.familyId;
+  const isParent = Boolean(user && user.role === "parent" && viewingHome);
 
   // ── actions ────────────────────────────────────────────────────────────────
 
   function handleDayClick(key) {
     if (shifts[key]) setShiftModalKey(key);
-    else if (user?.role === "parent") setAddModalKey(key);
+    else if (isParent) setAddModalKey(key);
   }
 
-  async function handleAddShift(date, { start, end, kids }) {
+  async function handleAddShift(date, { start, end, kids, label }) {
     try {
-      await store.addShift(user, { date, start, end, kids });
+      await store.addShift(user, { date, start, end, kids, label }, activeFamilyId);
       await refresh();
       const recipients = members.filter((m) => m.role === "family" && m.id !== user.id);
       store.notify(user, recipients, shiftPostedMessage(user, date, start, end, kids));
@@ -78,31 +97,31 @@ export default function App() {
   }
 
   async function handleClaim(date) {
-    await store.assignShift(user, date, user);
+    await store.assignShift(user, date, user, activeFamilyId);
     await refresh();
     const parents = members.filter((m) => m.role === "parent" && m.id !== user.id);
     store.notify(user, parents, shiftClaimedMessage(user, date));
   }
 
   async function handleUnclaim(date) {
-    await store.assignShift(user, date, null);
+    await store.assignShift(user, date, null, activeFamilyId);
     await refresh();
     const parents = members.filter((m) => m.role === "parent" && m.id !== user.id);
     store.notify(user, parents, `${user.name} can no longer cover the shift on ${date}. It is open again.`);
   }
 
   async function handleAssign(date, member) {
-    await store.assignShift(user, date, member);
+    await store.assignShift(user, date, member, activeFamilyId);
     await refresh();
   }
 
   async function handleDelete(date) {
-    await store.deleteShift(user, date);
+    await store.deleteShift(user, date, activeFamilyId);
     await refresh();
   }
 
   async function handleUpdateDetails(date, details) {
-    await store.updateShiftDetails(user, date, details);
+    await store.updateShiftDetails(user, date, details, activeFamilyId);
     await refresh();
   }
 
@@ -111,10 +130,30 @@ export default function App() {
     await store.markNotificationsRead(user);
   }
 
+  async function handleJoinFamily(code) {
+    await store.joinFamily(user, code);
+    await refreshFamilies(user);
+  }
+
+  async function handleLeaveFamily(familyId) {
+    await store.leaveFamily(user, familyId);
+    if (activeFamilyId === familyId) setActiveFamilyId(user.familyId);
+    await refreshFamilies(user);
+  }
+
+  function switchFamily(familyId) {
+    setActiveFamilyId(familyId);
+    setView("calendar");
+    setShiftModalKey(null);
+    setAddModalKey(null);
+  }
+
   function signOut() {
     store.signOut();
     setUser(null);
     setView("calendar");
+    setActiveFamilyId(null);
+    setFamilies([]);
     setMembers([]); setChildren([]); setShifts({}); setNotifications([]);
   }
 
@@ -129,10 +168,8 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthScreen onLogin={(u) => setUser(u)} />;
+    return <AuthScreen onLogin={(u) => { setUser(u); setActiveFamilyId(u.familyId); }} />;
   }
-
-  const isParent = user.role === "parent";
 
   return (
     <div style={{ minHeight: "100vh", background: C.cream, fontFamily: fontSans }}>
@@ -172,6 +209,26 @@ export default function App() {
         </div>
       </div>
 
+      {/* Family switcher */}
+      {families.length > 1 && (
+        <div style={{
+          background: C.sand, borderBottom: `1px solid ${C.softBorder}`, padding: "8px 14px",
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        }}>
+          <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Calendar
+          </div>
+          {families.map((f) => (
+            <button key={f.id} onClick={() => switchFamily(f.id)} style={{
+              padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer",
+              fontFamily: fontSans, fontWeight: 700, fontSize: 12,
+              background: (activeFamilyId || user.familyId) === f.id ? C.clay : C.white,
+              color: (activeFamilyId || user.familyId) === f.id ? C.white : C.warm,
+            }}>{f.isHome ? "My Family" : f.code}</button>
+          ))}
+        </div>
+      )}
+
       {/* Content */}
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "20px 14px 60px" }}>
 
@@ -199,6 +256,11 @@ export default function App() {
           <div>
             <div style={{ fontFamily: font, fontSize: 18, color: C.clay, fontWeight: 600 }}>
               Hi, {user.name.split(" ")[0]}
+              {!viewingHome && (
+                <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, fontWeight: 600 }}>
+                  {" "}— viewing {families.find((f) => f.id === activeFamilyId)?.code || "linked"} calendar
+                </span>
+              )}
             </div>
             <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted }}>
               {isParent
@@ -215,14 +277,18 @@ export default function App() {
             shifts={shifts}
             familyCode={user.familyCode}
             currentUser={user}
+            families={families}
             onRemoveMember={async (id) => { await store.removeMember(user, id); refresh(); }}
-            onAddChild={async (name) => { await store.addChild(user, name); refresh(); }}
+            onAddChild={async (name) => { await store.addChild(user, name, activeFamilyId); refresh(); }}
             onRemoveChild={async (id) => { await store.removeChild(user, id); refresh(); }}
+            onAddPlaceholderMember={async (info) => { await store.addPlaceholderMember(user, info, activeFamilyId); await refresh(); }}
+            onJoinFamily={handleJoinFamily}
+            onLeaveFamily={handleLeaveFamily}
           />
         ) : (
           <>
             <CalendarView
-              shifts={shifts} currentUser={user} onDayClick={handleDayClick}
+              shifts={shifts} currentUser={{ ...user, role: isParent ? "parent" : "family" }} onDayClick={handleDayClick}
               year={calYear} month={calMonth} setYear={setCalYear} setMonth={setCalMonth}
             />
             <UpcomingShifts shifts={shifts} onShiftClick={(k) => setShiftModalKey(k)} />
@@ -233,7 +299,7 @@ export default function App() {
       <ShiftModal
         open={Boolean(shiftModalKey)} onClose={() => setShiftModalKey(null)}
         dateStr={shiftModalKey} shift={shiftModalKey ? shifts[shiftModalKey] : null}
-        currentUser={user} members={members} childrenList={children}
+        currentUser={{ ...user, role: isParent ? "parent" : "family" }} members={members} childrenList={children}
         onClaim={handleClaim} onUnclaim={handleUnclaim} onAssign={handleAssign}
         onDelete={handleDelete} onUpdateDetails={handleUpdateDetails}
       />
