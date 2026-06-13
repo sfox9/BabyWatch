@@ -4,14 +4,18 @@
 
 create extension if not exists pgcrypto;
 
--- Families ────────────────────────────────────────────────────────────────────
+-- Families --------------------------------------------------------------------
 create table if not exists families (
   id uuid primary key default gen_random_uuid(),
   code text unique not null,
+  name text,
   created_at timestamptz default now()
 );
 
--- Members (parents + family members / nannies) ───────────────────────────────
+-- Migration for existing databases: add the new column. Safe to re-run.
+alter table families add column if not exists name text;
+
+-- Members (parents + family members / nannies) -------------------------------
 -- email/password_hash are nullable so a parent can add a "placeholder" member
 -- (e.g. a grandparent) who doesn't have their own login.
 create table if not exists members (
@@ -36,7 +40,7 @@ alter table members add column if not exists is_placeholder boolean default fals
 alter table members add column if not exists reset_token text;
 alter table members add column if not exists reset_token_expires timestamptz;
 
--- Children ───────────────────────────────────────────────────────────────────
+-- Children -------------------------------------------------------------------
 create table if not exists children (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references families(id) on delete cascade,
@@ -44,7 +48,7 @@ create table if not exists children (
   created_at timestamptz default now()
 );
 
--- Shifts (one per family per day) ────────────────────────────────────────────
+-- Shifts (multiple per family per day allowed) ------------------------------
 create table if not exists shifts (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references families(id) on delete cascade,
@@ -57,24 +61,32 @@ create table if not exists shifts (
   covered_by_name text,
   created_by uuid,
   created_by_name text,
-  created_at timestamptz default now(),
-  unique (family_id, date)
+  created_at timestamptz default now()
 );
 
 -- Migration for existing databases: add the new columns. Safe to re-run.
 alter table shifts add column if not exists label text;
 alter table shifts add column if not exists created_by_name text;
+-- Allow multiple shifts per day: drop the old one-per-day constraint.
+alter table shifts drop constraint if exists shifts_family_id_date_key;
 
--- Linked family calendars ────────────────────────────────────────────────────
+-- Linked family calendars ----------------------------------------------------
 -- Lets a member (e.g. an aunt/uncle) link an additional family's calendar
 -- (such as a sibling's) so they can switch between them in the app.
 create table if not exists family_links (
   id uuid primary key default gen_random_uuid(),
   member_id uuid not null references members(id) on delete cascade,
   family_id uuid not null references families(id) on delete cascade,
+  relationship text,
+  role text default 'family',
   created_at timestamptz default now(),
   unique (member_id, family_id)
 );
+
+-- Migration for existing databases: add the new columns. Safe to re-run.
+alter table family_links add column if not exists relationship text;
+alter table family_links add column if not exists role text default 'family';
+
 alter table family_links enable row level security;
 drop policy if exists "babywatch_all" on family_links;
 create policy "babywatch_all" on family_links for all using (true) with check (true);
@@ -84,7 +96,7 @@ begin
 exception when duplicate_object then null;
 end $$;
 
--- Notifications ──────────────────────────────────────────────────────────────
+-- Notifications --------------------------------------------------------------
 create table if not exists notifications (
   id uuid primary key default gen_random_uuid(),
   family_id uuid,
