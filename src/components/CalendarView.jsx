@@ -41,7 +41,7 @@ export default function CalendarView({ shifts, currentUser, onDayClick, year, mo
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, overflow: "hidden" }}>
         {cells.map((day, i) => {
           if (!day) return <div key={i} />;
           const key = dateKey(year, month, day);
@@ -54,7 +54,7 @@ export default function CalendarView({ shifts, currentUser, onDayClick, year, mo
           return (
             <div key={i} onClick={() => clickable && onDayClick(key)}
               style={{
-                borderRadius: 12, padding: "5px 3px", minHeight: 68,
+                borderRadius: 12, padding: "5px 3px", minHeight: 68, minWidth: 0, overflow: "hidden", boxSizing: "border-box",
                 cursor: clickable ? "pointer" : "default",
                 background: hasShifts ? (anyOpen ? C.dustyRose + "1A" : C.sage + "1A") : (isToday ? C.clay + "15" : C.cream),
                 border: isToday ? `2px solid ${C.clay}` : `1.5px solid ${hasShifts ? (anyOpen ? C.dustyRose + "66" : C.sage + "66") : C.softBorder}`,
@@ -73,8 +73,9 @@ export default function CalendarView({ shifts, currentUser, onDayClick, year, mo
                       background: covered ? C.sage + "33" : C.dustyRose + "33",
                       color: covered ? C.sage : C.dustyRose,
                       lineHeight: 1.25, marginBottom: 2, textAlign: "center",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {fmt12(shift.start)}â{fmt12(shift.end)}
+                      {fmt12(shift.start)}-{fmt12(shift.end)}
                     </div>
                     <div style={{
                       fontSize: 9, fontFamily: fontSans, fontWeight: 600, textAlign: "center",
