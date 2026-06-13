@@ -7,6 +7,8 @@ export default function SettingsPanel({ members, childrenList, shifts, familyCod
   const [newChild, setNewChild] = useState("");
   const [tab, setTab] = useState("members");
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const inviteLink = `${window.location.origin}${window.location.pathname}?code=${familyCode}`;
 
   const today = todayKey();
   const upcoming = Object.entries(shifts).filter(([k]) => k >= today);
@@ -27,6 +29,13 @@ export default function SettingsPanel({ members, childrenList, shifts, familyCod
     });
   }
 
+  function copyLink() {
+    navigator.clipboard?.writeText(inviteLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1800);
+    });
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -37,8 +46,14 @@ export default function SettingsPanel({ members, childrenList, shifts, familyCod
           <button onClick={copyCode} style={{
             background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 14, padding: "3px 12px",
             fontFamily: fontSans, fontSize: 11, fontWeight: 700, color: copied ? C.sage : C.warm, cursor: "pointer",
-          }}>{copied ? "Copied" : "Copy"}</button>
-          <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>Share this to invite family members and nannies</div>
+          }}>{copied ? "Copied" : "Copy code"}</button>
+          <button onClick={copyLink} style={{
+            background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 14, padding: "3px 12px",
+            fontFamily: fontSans, fontSize: 11, fontWeight: 700, color: linkCopied ? C.sage : C.warm, cursor: "pointer",
+          }}>{linkCopied ? "Link copied" : "Copy invite link"}</button>
+        </div>
+        <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
+          Share the code or invite link with family members, nannies, or a second parent. Anyone who signs up with it joins this same family calendar.
         </div>
       </div>
 
