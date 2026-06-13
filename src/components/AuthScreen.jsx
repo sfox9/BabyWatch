@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { C, font, fontSans } from "../lib/theme";
 import { store } from "../lib/store";
 import { Btn, Input, Select, LeafMark } from "./UI";
@@ -14,6 +14,19 @@ export default function AuthScreen({ onLogin }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [invited, setInvited] = useState(false);
+
+  // If opened via an invite link (?code=ABC123), prefill the code and jump
+  // straight to account creation.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const inviteCode = params.get("code");
+    if (inviteCode) {
+      setCode(inviteCode.trim().toUpperCase());
+      setMode("register");
+      setInvited(true);
+    }
+  }, []);
 
   async function submit() {
     setErr("");
@@ -77,9 +90,21 @@ export default function AuthScreen({ onLogin }) {
               <option value="parent">Parent</option>
             </Select>
             <Input label="Tag (e.g. Mom, Dad, Grandma, Nanny)" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Optional" />
-            {role === "family" && (
-              <Input label="Family Code (ask a parent for this)" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. WATCH1"
+            {role === "family" ? (
+              <Input label="Family Code (ask a parent for this)" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. 7K3MQ2"
                 style={{ textTransform: "uppercase", letterSpacing: "0.1em" }} />
+            ) : (
+              <Input label="Family Invite Code (optional)" value={code} onChange={(e) => setCode(e.target.value)}
+                placeholder="Leave blank to start a new family"
+                style={{ textTransform: "uppercase", letterSpacing: "0.1em" }} />
+            )}
+            {invited && (
+              <div style={{
+                background: C.sage + "22", borderRadius: 10, padding: "8px 12px", marginBottom: 14,
+                fontFamily: fontSans, fontSize: 12, color: C.warm, lineHeight: 1.5,
+              }}>
+                You're joining with invite code <strong>{code}</strong>.
+              </div>
             )}
           </>
         )}
