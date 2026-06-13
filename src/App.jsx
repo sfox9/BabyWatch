@@ -81,8 +81,13 @@ export default function App() {
   // ── actions ────────────────────────────────────────────────────────────────
 
   function handleDayClick(key) {
-    if (shifts[key]) setShiftModalKey(key);
+    if (shifts[key]?.length) setShiftModalKey(key);
     else if (isParent) setAddModalKey(key);
+  }
+
+  function handleAddAnother(date) {
+    setShiftModalKey(null);
+    setAddModalKey(date);
   }
 
   async function handleAddShift(date, { start, end, kids, label }) {
@@ -96,32 +101,32 @@ export default function App() {
     }
   }
 
-  async function handleClaim(date) {
-    await store.assignShift(user, date, user, activeFamilyId);
+  async function handleClaim(shift) {
+    await store.assignShift(user, shift.id, user, activeFamilyId);
     await refresh();
     const parents = members.filter((m) => m.role === "parent" && m.id !== user.id);
-    store.notify(user, parents, shiftClaimedMessage(user, date));
+    store.notify(user, parents, shiftClaimedMessage(user, shift.date));
   }
 
-  async function handleUnclaim(date) {
-    await store.assignShift(user, date, null, activeFamilyId);
+  async function handleUnclaim(shift) {
+    await store.assignShift(user, shift.id, null, activeFamilyId);
     await refresh();
     const parents = members.filter((m) => m.role === "parent" && m.id !== user.id);
-    store.notify(user, parents, `${user.name} can no longer cover the shift on ${date}. It is open again.`);
+    store.notify(user, parents, `${user.name} can no longer cover the shift on ${shift.date}. It is open again.`);
   }
 
-  async function handleAssign(date, member) {
-    await store.assignShift(user, date, member, activeFamilyId);
+  async function handleAssign(shift, member) {
+    await store.assignShift(user, shift.id, member, activeFamilyId);
     await refresh();
   }
 
-  async function handleDelete(date) {
-    await store.deleteShift(user, date, activeFamilyId);
+  async function handleDelete(shift) {
+    await store.deleteShift(user, shift.id, activeFamilyId);
     await refresh();
   }
 
-  async function handleUpdateDetails(date, details) {
-    await store.updateShiftDetails(user, date, details, activeFamilyId);
+  async function handleUpdateDetails(shift, details) {
+    await store.updateShiftDetails(user, shift.id, details, activeFamilyId);
     await refresh();
   }
 
@@ -224,7 +229,7 @@ export default function App() {
               fontFamily: fontSans, fontWeight: 700, fontSize: 12,
               background: (activeFamilyId || user.familyId) === f.id ? C.clay : C.white,
               color: (activeFamilyId || user.familyId) === f.id ? C.white : C.warm,
-            }}>{f.isHome ? "My Family" : f.code}</button>
+            }}>{f.name || (f.isHome ? "My Family" : f.code)}</button>
           ))}
         </div>
       )}
@@ -258,7 +263,7 @@ export default function App() {
               Hi, {user.name.split(" ")[0]}
               {!viewingHome && (
                 <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, fontWeight: 600 }}>
-                  {" "}— viewing {families.find((f) => f.id === activeFamilyId)?.code || "linked"} calendar
+                  {" "}— viewing {(() => { const f = families.find((f) => f.id === activeFamilyId); return f?.name || f?.code || "linked"; })()} calendar
                 </span>
               )}
             </div>
@@ -284,6 +289,7 @@ export default function App() {
             onAddPlaceholderMember={async (info) => { await store.addPlaceholderMember(user, info, activeFamilyId); await refresh(); }}
             onJoinFamily={handleJoinFamily}
             onLeaveFamily={handleLeaveFamily}
+            onRenameFamily={async (familyId, name) => { await store.setFamilyName(user, familyId, name); await refreshFamilies(user); if (familyId === user.familyId) setUser((u) => ({ ...u, familyName: name })); }}
           />
         ) : (
           <>
@@ -298,10 +304,11 @@ export default function App() {
 
       <ShiftModal
         open={Boolean(shiftModalKey)} onClose={() => setShiftModalKey(null)}
-        dateStr={shiftModalKey} shift={shiftModalKey ? shifts[shiftModalKey] : null}
+        dateStr={shiftModalKey} shiftList={shiftModalKey ? shifts[shiftModalKey] || [] : []}
         currentUser={{ ...user, role: isParent ? "parent" : "family" }} members={members} childrenList={children}
         onClaim={handleClaim} onUnclaim={handleUnclaim} onAssign={handleAssign}
         onDelete={handleDelete} onUpdateDetails={handleUpdateDetails}
+        onAddAnother={isParent ? handleAddAnother : undefined}
       />
       <AddShiftModal
         open={Boolean(addModalKey)} onClose={() => setAddModalKey(null)}
