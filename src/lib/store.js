@@ -1,8 +1,8 @@
 // BabyWatch data layer.
 // Two modes, one API:
-//   CLOUD  — Supabase (set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY): shared
+//   CLOUD  - Supabase (set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY): shared
 //            family data, realtime sync, email notifications via Edge Function.
-//   DEVICE — localStorage fallback: everything persists across refreshes on
+//   DEVICE - localStorage fallback: everything persists across refreshes on
 //            this device. No data ever resets on refresh in either mode.
 // The rest of the app only talks to this module, which keeps the codebase
 // ready to wrap with Capacitor or Expo later without a rewrite.
@@ -13,12 +13,12 @@ import { fmt12, prettyDate } from "./time";
 const LS_DB = "babywatch_db_v2";
 const LS_SESSION = "babywatch_session_v2";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// -- helpers ------------------------------------------------------------------
 
 async function hashPassword(pw) {
   const data = new TextEncoder().encode("babywatch::" + pw);
   const buf = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [..nnew Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function uid() {
@@ -33,14 +33,14 @@ function genFamilyCode() {
   return out;
 }
 
-// ── device-mode storage ──────────────────────────────────────────────────────
+// -- device-mode storage ------------------------------------------------------
 
 function readDB() {
   let db;
   try {
     const raw = localStorage.getItem(LS_DB);
     db = raw ? JSON.parse(raw) : null;
-  } catch (e) { /* corrupted — start fresh */ }
+  } catch (e) { /* corrupted - start fresh */ }
   if (!db) db = { members: [], children: [], shifts: {}, notifications: [] };
   if (!db.shifts) db.shifts = {};
   // Migrate old shape ({date: shift}) to new shape ({date: [shift, ...]})
@@ -54,7 +54,7 @@ function writeDB(db) {
   localStorage.setItem(LS_DB, JSON.stringify(db));
 }
 
-// ── session ──────────────────────────────────────────────────────────────────
+// -- session ------------------------------------------------------------------
 
 function saveSession(user) {
   localStorage.setItem(LS_SESSION, JSON.stringify({ id: user.id, familyId: user.familyId }));
@@ -73,7 +73,7 @@ function readSessionRef() {
   }
 }
 
-// ── shape mappers (cloud rows -> app objects) ──────────────────────────────
+// -- shape mappers (cloud rows -> app objects) -------------------------------
 
 function mapMember(r) {
   return {
@@ -98,12 +98,12 @@ function mapShift(r) {
   };
 }
 
-// ── public API ───────────────────────────────────────────────────────────────
+// -- public API ---------------------------------------------------------------
 
 export const store = {
   mode: isCloudMode() ? "cloud" : "device",
 
-  // —— auth ——
+  // -- auth --
   async restoreSession() {
     const ref = readSessionRef();
     if (!ref) return null;
@@ -211,7 +211,7 @@ export const store = {
     clearSession();
   },
 
-  // —— password recovery (cloud mode only) ——
+  // -- password recovery (cloud mode only) --
   async requestPasswordReset(email) {
     email = (email || "").trim().toLowerCase();
     if (!email) throw new Error("Please enter your email.");
@@ -254,7 +254,7 @@ export const store = {
     return true;
   },
 
-  // —— linked family calendars (cloud mode only) ——
+  // -- linked family calendars (cloud mode only) --
   // A member's "home" family is where their account lives. They can also link
   // additional families (e.g. a sibling's) by entering that family's invite
   // code, then switch between calendars in the app.
@@ -263,18 +263,21 @@ export const store = {
       const sb = getSupabase();
       const { data: links } = await sb
         .from("family_links")
-        .select("family_id, families(code, name)")
+        .select("family_id, relationship, role, families(code, name)")
         .eq("member_id", user.id);
-      const list = [{ id: user.familyId, code: user.familyCode, name: user.familyName || "", isHome: true }];
+      const list = [{ id: user.familyId, code: user.familyCode, name: user.familyName || "", isHome: true, role: user.role, relationship: "" }];
       (links || []).forEach((l) => {
         if (l.family_id !== user.familyId) {
-          list.push({ id: l.family_id, code: l.families?.code || "", name: l.families?.name || "", isHome: false });
+          list.push({
+            id: l.family_id, code: l.families?.code || "", name: l.families?.name || "", isHome: false,
+            role: l.role || "family", relationship: l.relationship || "",
+          });
         }
       });
       return list;
     }
     const db = readDB();
-    return [{ id: "local-family", code: db.familyCode || "", name: db.familyName || "", isHome: true }];
+    return [{ id: "local-family", code: db.familyCode || "", name: db.familyName || "", isHome: true, role: user.role, relationship: "" }];
   },
 
   // Set a custom display name for a calendar (e.g. "Fox Family Calendar").
@@ -290,7 +293,7 @@ export const store = {
     writeDB(db);
   },
 
-  async joinFamily(user, code) {
+  async joinFamily(user, code, relationship) {
     code = (code || "").trim().toUpperCase();
     if (!code) throw new Error("Please enter a family code.");
     if (!isCloudMode()) throw new Error("Linking a second family calendar requires cloud sync mode.");
@@ -298,7 +301,9 @@ export const store = {
     const { data: fam } = await sb.from("families").select("*").eq("code", code).maybeSingle();
     if (!fam) throw new Error("That family code wasn't found. Double-check the code or invite link.");
     if (fam.id === user.familyId) throw new Error("That's already your family's calendar.");
-    const { error } = await sb.from("family_links").insert({ member_id: user.id, family_id: fam.id });
+    const { error } = await sb.from("family_links").insert({
+      member_id: user.id, family_id: fam.id, relationship: (relationship || "").trim() || null, role: "family",
+    });
     if (error && error.code !== "23505") throw new Error("Could not link that calendar. Please try again.");
     return { id: fam.id, code: fam.code };
   },
@@ -309,7 +314,28 @@ export const store = {
     await sb.from("family_links").delete().eq("member_id", user.id).eq("family_id", familyId);
   },
 
-  // —— fetch everything the app needs (for a given calendar/family) ——
+  // Create a brand-new family calendar (e.g. for a family member who also
+  // wants their own calendar for their own kids). The creator becomes the
+  // "parent" of this new calendar via a family_links entry, without changing
+  // their home account/role.
+  async createFamily(user, { name, relationship }) {
+    if (!isCloudMode()) throw new Error("Creating an additional calendar requires cloud sync mode.");
+    const sb = getSupabase();
+    let fam;
+    for (let i = 0; i < 6 && !fam; i++) {
+      const tryCode = genFamilyCode();
+      const { data: created } = await sb.from("families").insert({ code: tryCode, name: (name || "").trim() || null }).select().maybeSingle();
+      if (created) fam = created;
+    }
+    if (!fam) throw new Error("Could not create the calendar. Please try again.");
+    const { error } = await sb.from("family_links").insert({
+      member_id: user.id, family_id: fam.id, relationship: (relationship || "").trim() || "Parent", role: "parent",
+    });
+    if (error) throw new Error("Could not link the new calendar. Please try again.");
+    return { id: fam.id, code: fam.code, name: fam.name };
+  },
+
+  // -- fetch everything the app needs (for a given calendar/family) --
   async fetchAll(user, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
@@ -345,7 +371,7 @@ export const store = {
     };
   },
 
-  // —— shifts —— (a day can have multiple shifts; each is identified by id)
+  // -- shifts -- (a day can have multiple shifts; each is identified by id)
   async addShift(user, { date, start, end, kids, label }, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
@@ -417,7 +443,7 @@ export const store = {
     writeDB(db);
   },
 
-  // —— children ——
+  // -- children --
   async addChild(user, name, familyId) {
     familyId = familyId || user.familyId;
     name = name.trim();
@@ -443,7 +469,7 @@ export const store = {
     writeDB(db);
   },
 
-  // —— members ——
+  // -- members --
   async removeMember(user, memberId) {
     if (memberId === user.id) return;
     if (isCloudMode()) {
@@ -484,7 +510,7 @@ export const store = {
     writeDB(db);
   },
 
-  // —— notifications ——
+  // -- notifications --
   async notify(user, recipients, message) {
     if (!recipients.length) return;
     if (isCloudMode()) {
@@ -524,7 +550,7 @@ export const store = {
     writeDB(db);
   },
 
-  // —— realtime sync (cloud) / cross-tab sync (device) ——
+  // -- realtime sync (cloud) / cross-tab sync (device) --
   subscribe(user, onChange) {
     if (isCloudMode()) {
       const sb = getSupabase();
@@ -540,7 +566,7 @@ export const store = {
   },
 };
 
-// ── notification message builders ──────────────────────────────────────────
+// -- notification message builders -------------------------------------------
 
 export function shiftPostedMessage(poster, date, start, end, kids) {
   const kidStr = kids?.length ? ` for ${kids.join(" and ")}` : "";
