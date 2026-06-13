@@ -6,8 +6,10 @@ import { Badge, Btn } from "./UI";
 export default function SettingsPanel({
   members, childrenList, shifts, familyCode, currentUser,
   families, onRemoveMember, onAddChild, onRemoveChild,
-  onAddPlaceholderMember, onJoinFamily, onLeaveFamily,
+  onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onRenameFamily,
 }) {
+  const [renamingId, setRenamingId] = useState(null);
+  const [nameInput, setNameInput] = useState("");
   const [newChild, setNewChild] = useState("");
   const [tab, setTab] = useState("members");
   const [copied, setCopied] = useState(false);
@@ -24,9 +26,11 @@ export default function SettingsPanel({
   const [joinBusy, setJoinBusy] = useState(false);
 
   const today = todayKey();
-  const upcoming = Object.entries(shifts).filter(([k]) => k >= today);
-  const openShifts = upcoming.filter(([, s]) => !s.coveredByName).length;
-  const coveredShifts = upcoming.filter(([, s]) => s.coveredByName).length;
+  const upcoming = Object.entries(shifts)
+    .filter(([k]) => k >= today)
+    .flatMap(([, list]) => list || []);
+  const openShifts = upcoming.filter((s) => !s.coveredByName).length;
+  const coveredShifts = upcoming.filter((s) => s.coveredByName).length;
 
   function addChild() {
     if (newChild.trim()) {
@@ -228,17 +232,41 @@ export default function SettingsPanel({
           {(families || []).map((f) => (
             <div key={f.id} style={{
               background: C.white, borderRadius: 12, padding: "12px 14px", marginBottom: 8,
-              display: "flex", alignItems: "center", gap: 12, border: `1.5px solid ${C.softBorder}`,
+              border: `1.5px solid ${C.softBorder}`,
             }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: fontSans, fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: "0.08em" }}>{f.code}</div>
-                <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>{f.isHome ? "Your family" : "Linked calendar"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: fontSans, fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name || f.code}
+                  </div>
+                  <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, letterSpacing: "0.06em" }}>
+                    {f.isHome ? "Your family" : "Linked calendar"}{f.name ? ` · code ${f.code}` : ""}
+                  </div>
+                </div>
+                {onRenameFamily && (
+                  <button onClick={() => { setRenamingId(renamingId === f.id ? null : f.id); setNameInput(f.name || ""); }} style={{
+                    background: "none", border: "none", color: C.clay, cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                  }}>{renamingId === f.id ? "Cancel" : "Rename"}</button>
+                )}
+                {!f.isHome && (
+                  <button onClick={() => onLeaveFamily(f.id)} style={{
+                    background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                  }}>Remove</button>
+                )}
               </div>
-              {!f.isHome && (
-                <button onClick={() => onLeaveFamily(f.id)} style={{
-                  background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
-                  fontSize: 13, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
-                }}>Remove</button>
+              {renamingId === f.id && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="e.g. Fox Family Calendar"
+                      style={{
+                        width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
+                        padding: "10px 14px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none",
+                      }} />
+                  </div>
+                  <Btn small onClick={async () => { await onRenameFamily(f.id, nameInput.trim()); setRenamingId(null); }}>Save</Btn>
+                </div>
               )}
             </div>
           ))}
