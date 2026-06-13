@@ -18,7 +18,7 @@ const LS_SESSION = "babywatch_session_v2";
 async function hashPassword(pw) {
   const data = new TextEncoder().encode("babywatch::" + pw);
   const buf = await crypto.subtle.digest("SHA-256", data);
-  return [..nnew Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function uid() {
