@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./index.css";
 import { C, font, fontSans } from "./lib/theme";
-import { store, FAMILY_CODE, shiftPostedMessage, shiftClaimedMessage } from "./lib/store";
+import { store, shiftPostedMessage, shiftClaimedMessage } from "./lib/store";
 import AuthScreen from "./components/AuthScreen";
 import CalendarView from "./components/CalendarView";
 import ShiftModal from "./components/ShiftModal";
@@ -213,7 +213,7 @@ export default function App() {
             members={members}
             childrenList={children}
             shifts={shifts}
-            familyCode={FAMILY_CODE}
+            familyCode={user.familyCode}
             currentUser={user}
             onRemoveMember={async (id) => { await store.removeMember(user, id); refresh(); }}
             onAddChild={async (name) => { await store.addChild(user, name); refresh(); }}
