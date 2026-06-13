@@ -3,7 +3,7 @@ import { C, fontSans } from "../lib/theme";
 import { prettyDateFull } from "../lib/time";
 import { Btn, Input, Modal } from "./UI";
 
-const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Doctor Visit", "Event", "Date Night", "Overnight"];
+const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Work", "Doctor Visit", "Event", "Date Night", "Overnight"];
 
 export default function AddShiftModal({ open, onClose, selectedDate, onAdd, childrenList }) {
   const [start, setStart] = useState("07:00");
