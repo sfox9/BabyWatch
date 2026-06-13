@@ -36,11 +36,18 @@ function genFamilyCode() {
 // ── device-mode storage ──────────────────────────────────────────────────────
 
 function readDB() {
+  let db;
   try {
     const raw = localStorage.getItem(LS_DB);
-    if (raw) return JSON.parse(raw);
+    db = raw ? JSON.parse(raw) : null;
   } catch (e) { /* corrupted — start fresh */ }
-  return { members: [], children: [], shifts: {}, notifications: [] };
+  if (!db) db = { members: [], children: [], shifts: {}, notifications: [] };
+  if (!db.shifts) db.shifts = {};
+  // Migrate old shape ({date: shift}) to new shape ({date: [shift, ...]})
+  Object.keys(db.shifts).forEach((k) => {
+    if (db.shifts[k] && !Array.isArray(db.shifts[k])) db.shifts[k] = [db.shifts[k]];
+  });
+  return db;
 }
 
 function writeDB(db) {
@@ -66,12 +73,13 @@ function readSessionRef() {
   }
 }
 
-// ── shape mappers (cloud rows -> app objects) ───────────────────────────────
+// ── shape mappers (cloud rows -> app objects) ──────────────────────────────
 
 function mapMember(r) {
   return {
     id: r.id, familyId: r.family_id, name: r.name, email: r.email, role: r.role, tag: r.tag || "",
     familyCode: r.families?.code || r.familyCode || "",
+    familyName: r.families?.name || r.familyName || "",
     isPlaceholder: Boolean(r.is_placeholder),
   };
 }
@@ -101,13 +109,13 @@ export const store = {
     if (!ref) return null;
     if (isCloudMode()) {
       const sb = getSupabase();
-      const { data } = await sb.from("members").select("*, families(code)").eq("id", ref.id).maybeSingle();
+      const { data } = await sb.from("members").select("*, families(code, name)").eq("id", ref.id).maybeSingle();
       return data ? mapMember(data) : null;
     }
     const db = readDB();
     const u = db.members.find((m) => m.id === ref.id);
     if (!u) return null;
-    const pub = { ...u, familyCode: db.familyCode || "" };
+    const pub = { ...u, familyCode: db.familyCode || "", familyName: db.familyName || "" };
     delete pub.password_hash;
     return pub;
   },
@@ -151,7 +159,7 @@ export const store = {
         .select()
         .single();
       if (error) throw new Error("Could not create the account. Please try again.");
-      const user = mapMember({ ...data, families: { code: fam.code } });
+      const user = mapMember({ ...data, families: { code: fam.code, name: fam.name } });
       saveSession(user);
       return user;
     }
@@ -173,7 +181,7 @@ export const store = {
     };
     db.members.push(user);
     writeDB(db);
-    const pub = { ...user, familyCode: db.familyCode };
+    const pub = { ...user, familyCode: db.familyCode, familyName: db.familyName || "" };
     delete pub.password_hash;
     saveSession(pub);
     return pub;
@@ -184,7 +192,7 @@ export const store = {
     const password_hash = await hashPassword(password);
     if (isCloudMode()) {
       const sb = getSupabase();
-      const { data } = await sb.from("members").select("*, families(code)").eq("email", email).eq("password_hash", password_hash).maybeSingle();
+      const { data } = await sb.from("members").select("*, families(code, name)").eq("email", email).eq("password_hash", password_hash).maybeSingle();
       if (!data) throw new Error("Invalid email or password.");
       const user = mapMember(data);
       saveSession(user);
@@ -193,7 +201,7 @@ export const store = {
     const db = readDB();
     const u = db.members.find((m) => m.email === email && m.password_hash === password_hash);
     if (!u) throw new Error("Invalid email or password.");
-    const pub = { ...u, familyCode: db.familyCode || "" };
+    const pub = { ...u, familyCode: db.familyCode || "", familyName: db.familyName || "" };
     delete pub.password_hash;
     saveSession(pub);
     return pub;
@@ -255,18 +263,31 @@ export const store = {
       const sb = getSupabase();
       const { data: links } = await sb
         .from("family_links")
-        .select("family_id, families(code)")
+        .select("family_id, families(code, name)")
         .eq("member_id", user.id);
-      const list = [{ id: user.familyId, code: user.familyCode, isHome: true }];
+      const list = [{ id: user.familyId, code: user.familyCode, name: user.familyName || "", isHome: true }];
       (links || []).forEach((l) => {
         if (l.family_id !== user.familyId) {
-          list.push({ id: l.family_id, code: l.families?.code || "", isHome: false });
+          list.push({ id: l.family_id, code: l.families?.code || "", name: l.families?.name || "", isHome: false });
         }
       });
       return list;
     }
     const db = readDB();
-    return [{ id: "local-family", code: db.familyCode || "", isHome: true }];
+    return [{ id: "local-family", code: db.familyCode || "", name: db.familyName || "", isHome: true }];
+  },
+
+  // Set a custom display name for a calendar (e.g. "Fox Family Calendar").
+  async setFamilyName(user, familyId, name) {
+    name = (name || "").trim();
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      await sb.from("families").update({ name: name || null }).eq("id", familyId);
+      return;
+    }
+    const db = readDB();
+    db.familyName = name;
+    writeDB(db);
   },
 
   async joinFamily(user, code) {
@@ -300,7 +321,10 @@ export const store = {
         sb.from("notifications").select("*").eq("recipient_id", user.id).order("created_at", { ascending: false }).limit(30),
       ]);
       const shifts = {};
-      (sh.data || []).forEach((r) => { shifts[r.date] = mapShift(r); });
+      (sh.data || []).forEach((r) => {
+        (shifts[r.date] = shifts[r.date] || []).push(mapShift(r));
+      });
+      Object.values(shifts).forEach((arr) => arr.sort((a, b) => (a.start || "").localeCompare(b.start || "")));
       return {
         members: (mem.data || []).map(mapMember),
         children: (kids.data || []).map((r) => ({ id: r.id, name: r.name })),
@@ -321,7 +345,7 @@ export const store = {
     };
   },
 
-  // —— shifts ——
+  // —— shifts —— (a day can have multiple shifts; each is identified by id)
   async addShift(user, { date, start, end, kids, label }, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
@@ -330,54 +354,66 @@ export const store = {
         family_id: familyId, date, start_time: start, end_time: end, kids,
         label: label?.trim() || null, created_by: user.id, created_by_name: user.name,
       });
-      if (error) throw new Error("Could not post the shift (is there already one on that day?).");
+      if (error) throw new Error("Could not post the shift. Please try again.");
       return;
     }
     const db = readDB();
-    db.shifts[date] = { id: uid(), date, start, end, kids, label: label?.trim() || "", coveredById: null, coveredByName: null, postedByName: user.name };
+    if (!db.shifts[date]) db.shifts[date] = [];
+    db.shifts[date].push({ id: uid(), date, start, end, kids, label: label?.trim() || "", coveredById: null, coveredByName: null, postedByName: user.name });
     writeDB(db);
   },
 
-  async updateShiftDetails(user, date, { start, end, kids, label }, familyId) {
+  async updateShiftDetails(user, shiftId, { start, end, kids, label }, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("shifts").update({ start_time: start, end_time: end, kids, label: label?.trim() || null }).eq("family_id", familyId).eq("date", date);
+      await sb.from("shifts").update({ start_time: start, end_time: end, kids, label: label?.trim() || null }).eq("id", shiftId);
       return;
     }
     const db = readDB();
-    if (db.shifts[date]) {
-      db.shifts[date] = { ...db.shifts[date], start, end, kids, label: label?.trim() || "" };
-      writeDB(db);
+    for (const date of Object.keys(db.shifts)) {
+      const i = (db.shifts[date] || []).findIndex((s) => s.id === shiftId);
+      if (i !== -1) {
+        db.shifts[date][i] = { ...db.shifts[date][i], start, end, kids, label: label?.trim() || "" };
+        writeDB(db);
+        return;
+      }
     }
   },
 
-  async assignShift(user, date, member /* member object or null to clear */, familyId) {
+  async assignShift(user, shiftId, member /* member object or null to clear */, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
       await sb.from("shifts").update({
         covered_by_id: member ? member.id : null,
         covered_by_name: member ? member.name : null,
-      }).eq("family_id", familyId).eq("date", date);
+      }).eq("id", shiftId);
       return;
     }
     const db = readDB();
-    if (db.shifts[date]) {
-      db.shifts[date] = { ...db.shifts[date], coveredById: member ? member.id : null, coveredByName: member ? member.name : null };
-      writeDB(db);
+    for (const date of Object.keys(db.shifts)) {
+      const i = (db.shifts[date] || []).findIndex((s) => s.id === shiftId);
+      if (i !== -1) {
+        db.shifts[date][i] = { ...db.shifts[date][i], coveredById: member ? member.id : null, coveredByName: member ? member.name : null };
+        writeDB(db);
+        return;
+      }
     }
   },
 
-  async deleteShift(user, date, familyId) {
+  async deleteShift(user, shiftId, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("shifts").delete().eq("family_id", familyId).eq("date", date);
+      await sb.from("shifts").delete().eq("id", shiftId);
       return;
     }
     const db = readDB();
-    delete db.shifts[date];
+    for (const date of Object.keys(db.shifts)) {
+      db.shifts[date] = (db.shifts[date] || []).filter((s) => s.id !== shiftId);
+      if (db.shifts[date].length === 0) delete db.shifts[date];
+    }
     writeDB(db);
   },
 
@@ -420,9 +456,9 @@ export const store = {
     const db = readDB();
     db.members = db.members.filter((m) => m.id !== memberId);
     Object.keys(db.shifts).forEach((d) => {
-      if (db.shifts[d].coveredById === memberId) {
-        db.shifts[d] = { ...db.shifts[d], coveredById: null, coveredByName: null };
-      }
+      db.shifts[d] = (db.shifts[d] || []).map((s) =>
+        s.coveredById === memberId ? { ...s, coveredById: null, coveredByName: null } : s
+      );
     });
     writeDB(db);
   },
@@ -504,7 +540,7 @@ export const store = {
   },
 };
 
-// ── notification message builders ───────────────────────────────────────────
+// ── notification message builders ──────────────────────────────────────────
 
 export function shiftPostedMessage(poster, date, start, end, kids) {
   const kidStr = kids?.length ? ` for ${kids.join(" and ")}` : "";
