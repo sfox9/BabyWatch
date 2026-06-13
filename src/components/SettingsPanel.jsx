@@ -3,10 +3,19 @@ import { C, font, fontSans } from "../lib/theme";
 import { todayKey } from "../lib/time";
 import { Badge, Btn } from "./UI";
 
+const REMINDER_OPTIONS = [
+  { minutes: 1440, label: "1 day before" },
+  { minutes: 180, label: "3 hours before" },
+  { minutes: 60, label: "1 hour before" },
+  { minutes: 30, label: "30 minutes before" },
+  { minutes: 15, label: "15 minutes before" },
+];
+
 export default function SettingsPanel({
   isParent, members, childrenList, shifts, familyCode, currentUser,
   families, onRemoveMember, onAddChild, onRemoveChild,
   onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
+  onUpdateReminders,
 }) {
   const [renamingId, setRenamingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
@@ -30,6 +39,10 @@ export default function SettingsPanel({
   const [newFamRelationship, setNewFamRelationship] = useState("");
   const [createErr, setCreateErr] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
+
+  const [reminderOffsets, setReminderOffsets] = useState(currentUser.reminderOffsets || [1440, 60]);
+  const [reminderSaved, setReminderSaved] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
 
   const today = todayKey();
   const upcoming = Object.entries(shifts)
@@ -95,6 +108,24 @@ export default function SettingsPanel({
     }
   }
 
+  function toggleReminder(minutes) {
+    setReminderSaved(false);
+    setReminderOffsets((prev) =>
+      prev.includes(minutes) ? prev.filter((m) => m !== minutes) : [...prev, minutes].sort((a, b) => b - a)
+    );
+  }
+
+  async function saveReminders() {
+    setReminderBusy(true);
+    try {
+      await onUpdateReminders(reminderOffsets);
+      setReminderSaved(true);
+      setTimeout(() => setReminderSaved(false), 1800);
+    } finally {
+      setReminderBusy(false);
+    }
+  }
+
   async function createCalendar() {
     setCreateErr("");
     setCreateBusy(true);
@@ -144,7 +175,7 @@ export default function SettingsPanel({
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18, borderBottom: `1.5px solid ${C.softBorder}`, flexWrap: "wrap" }}>
-        {(isParent ? ["members", "children", "calendars"] : ["calendars"]).map((t) => (
+        {(isParent ? ["members", "children", "calendars", "notifications"] : ["calendars", "notifications"]).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: "8px 20px", borderRadius: "10px 10px 0 0", border: "none", cursor: "pointer",
             fontFamily: fontSans, fontWeight: 700, fontSize: 13, textTransform: "capitalize",
@@ -353,6 +384,39 @@ export default function SettingsPanel({
           )}
         </div>
       )}
+
+      {tab === "notifications" && (
+        <div>
+          <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+            When you're covering a shift, get a reminder before it starts - as an in-app notification and an email (if email alerts are set up).
+          </div>
+          <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${C.softBorder}` }}>
+            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 10 }}>
+              Remind me
+            </div>
+            {REMINDER_OPTIONS.map((opt) => (
+              <label key={opt.minutes} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "8px 2px",
+                fontFamily: fontSans, fontSize: 14, color: C.text, cursor: "pointer",
+              }}>
+                <input
+                  type="checkbox"
+                  checked={reminderOffsets.includes(opt.minutes)}
+                  onChange={() => toggleReminder(opt.minutes)}
+                  style={{ width: 18, height: 18, accentColor: C.clay, cursor: "pointer" }}
+                />
+                {opt.label}
+              </label>
+            ))}
+            <div style={{ marginTop: 12 }}>
+              <Btn small onClick={saveReminders} disabled={reminderBusy}>
+                {reminderBusy ? "Saving..." : reminderSaved ? "Saved" : "Save"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
