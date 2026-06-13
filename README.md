@@ -62,8 +62,21 @@ Note: on Resend's free plan without a custom domain, emails come from `onboardin
 - **First parent:** open the app link → Create Account → choose **Parent**, leave the invite code blank. This creates your family and gives it a random invite code (shown in **Settings**).
 - **Everyone else (second parent, family members, nannies):** use the invite link a parent shares from **Settings** (it opens straight to Create Account with the code filled in), or choose Create Account and enter the family code shown in Settings. Pick **Parent** if they should also have full admin access (e.g. a second parent), or **Family Member / Nanny** for view/claim access.
 - Add your children in **Settings**, then tap any day on the calendar to post a shift.
+- When posting or editing a shift, parents can add a short description (e.g. "School Drop Off", "Doctor Visit") — it shows on the calendar, in the shift details, and in the upcoming list, along with who posted it.
 - **Phone home screen:** open the link on a phone → Share button (iPhone) or menu (Android) → **Add to Home Screen**. It looks and feels like an installed app.
 - **Skylight / Apple / Google Calendar:** tap **Export iCal** under the calendar and open the downloaded file.
+
+### Forgot password
+
+On the sign-in screen, tap **Forgot password?**, enter your email, and you'll get an email with a link to set a new password (requires Family sync mode + Part 3 email setup below). Links expire after 1 hour.
+
+### Linking a second family's calendar (e.g. a sibling's)
+
+If you're also helping out with another family that uses BabyWatch (say, your sister's), go to **Settings → Linked Calendars**, enter their family code, and tap **Link Calendar**. A switcher will appear at the top of the app so you can flip between **My Family** and the linked calendar — from the linked calendar you can view and claim open shifts just like a family member there. Requires Family sync mode.
+
+### Adding a family member without an account (e.g. a grandparent)
+
+In **Settings → Members**, use the "Add a family member without an account" box to add them by name (and an optional tag like "Grandma"). They'll appear in the members list and can be assigned shifts by a parent, but they can't sign in themselves — no email or password needed.
 
 ---
 
