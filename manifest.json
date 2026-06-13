@@ -1,0 +1,23 @@
+{
+  "name": "BabyWatch",
+  "short_name": "BabyWatch",
+  "description": "Family care, beautifully coordinated",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F2EC",
+  "theme_color": "#C4956A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml"
+    }
+  ]
+}
