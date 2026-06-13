@@ -72,6 +72,7 @@ function mapMember(r) {
   return {
     id: r.id, familyId: r.family_id, name: r.name, email: r.email, role: r.role, tag: r.tag || "",
     familyCode: r.families?.code || r.familyCode || "",
+    isPlaceholder: Boolean(r.is_placeholder),
   };
 }
 
@@ -82,8 +83,10 @@ function mapShift(r) {
     start: r.start_time,
     end: r.end_time,
     kids: r.kids || [],
+    label: r.label || "",
     coveredById: r.covered_by_id,
     coveredByName: r.covered_by_name,
+    postedByName: r.created_by_name || "",
   };
 }
 
@@ -200,14 +203,100 @@ export const store = {
     clearSession();
   },
 
-  // —— fetch everything the app needs ——
-  async fetchAll(user) {
+  // —— password recovery (cloud mode only) ——
+  async requestPasswordReset(email) {
+    email = (email || "").trim().toLowerCase();
+    if (!email) throw new Error("Please enter your email.");
+    if (!isCloudMode()) {
+      throw new Error("Password reset by email isn't available in offline mode. Ask a parent to help reset your password.");
+    }
+    const sb = getSupabase();
+    const { data: member } = await sb.from("members").select("id, name").eq("email", email).maybeSingle();
+    if (!member) throw new Error("No account found with that email.");
+    const token = uid();
+    const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await sb.from("members").update({ reset_token: token, reset_token_expires: expires }).eq("id", member.id);
+    const link = `${window.location.origin}${window.location.pathname}?reset=${token}&email=${encodeURIComponent(email)}`;
+    try {
+      await sb.functions.invoke("send-email", {
+        body: {
+          to: [email],
+          subject: "Reset your BabyWatch password",
+          text: `Hi ${member.name}, click <a href="${link}">this link</a> to set a new BabyWatch password. The link expires in 1 hour. If you didn't request this, you can safely ignore this email.`,
+        },
+      });
+    } catch (e) { /* email is best-effort */ }
+    return true;
+  },
+
+  async resetPassword({ email, token, password }) {
+    email = (email || "").trim().toLowerCase();
+    if (!password || password.length < 4) throw new Error("Please choose a password with at least 4 characters.");
+    if (!isCloudMode()) throw new Error("Password reset isn't available in offline mode.");
+    const sb = getSupabase();
+    const { data: member } = await sb.from("members").select("id, reset_token, reset_token_expires").eq("email", email).maybeSingle();
+    if (!member || !member.reset_token || member.reset_token !== token) {
+      throw new Error("This reset link is invalid. Please request a new one.");
+    }
+    if (!member.reset_token_expires || new Date(member.reset_token_expires) < new Date()) {
+      throw new Error("This reset link has expired. Please request a new one.");
+    }
+    const password_hash = await hashPassword(password);
+    await sb.from("members").update({ password_hash, reset_token: null, reset_token_expires: null }).eq("id", member.id);
+    return true;
+  },
+
+  // —— linked family calendars (cloud mode only) ——
+  // A member's "home" family is where their account lives. They can also link
+  // additional families (e.g. a sibling's) by entering that family's invite
+  // code, then switch between calendars in the app.
+  async listFamilies(user) {
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      const { data: links } = await sb
+        .from("family_links")
+        .select("family_id, families(code)")
+        .eq("member_id", user.id);
+      const list = [{ id: user.familyId, code: user.familyCode, isHome: true }];
+      (links || []).forEach((l) => {
+        if (l.family_id !== user.familyId) {
+          list.push({ id: l.family_id, code: l.families?.code || "", isHome: false });
+        }
+      });
+      return list;
+    }
+    const db = readDB();
+    return [{ id: "local-family", code: db.familyCode || "", isHome: true }];
+  },
+
+  async joinFamily(user, code) {
+    code = (code || "").trim().toUpperCase();
+    if (!code) throw new Error("Please enter a family code.");
+    if (!isCloudMode()) throw new Error("Linking a second family calendar requires cloud sync mode.");
+    const sb = getSupabase();
+    const { data: fam } = await sb.from("families").select("*").eq("code", code).maybeSingle();
+    if (!fam) throw new Error("That family code wasn't found. Double-check the code or invite link.");
+    if (fam.id === user.familyId) throw new Error("That's already your family's calendar.");
+    const { error } = await sb.from("family_links").insert({ member_id: user.id, family_id: fam.id });
+    if (error && error.code !== "23505") throw new Error("Could not link that calendar. Please try again.");
+    return { id: fam.id, code: fam.code };
+  },
+
+  async leaveFamily(user, familyId) {
+    if (!isCloudMode()) return;
+    const sb = getSupabase();
+    await sb.from("family_links").delete().eq("member_id", user.id).eq("family_id", familyId);
+  },
+
+  // —— fetch everything the app needs (for a given calendar/family) ——
+  async fetchAll(user, familyId) {
+    familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
       const [mem, kids, sh, notes] = await Promise.all([
-        sb.from("members").select("*").eq("family_id", user.familyId).order("created_at"),
-        sb.from("children").select("*").eq("family_id", user.familyId).order("created_at"),
-        sb.from("shifts").select("*").eq("family_id", user.familyId),
+        sb.from("members").select("*").eq("family_id", familyId).order("created_at"),
+        sb.from("children").select("*").eq("family_id", familyId).order("created_at"),
+        sb.from("shifts").select("*").eq("family_id", familyId),
         sb.from("notifications").select("*").eq("recipient_id", user.id).order("created_at", { ascending: false }).limit(30),
       ]);
       const shifts = {};
@@ -221,7 +310,7 @@ export const store = {
     }
     const db = readDB();
     return {
-      members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag })),
+      members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag, isPlaceholder: Boolean(m.isPlaceholder) })),
       children: db.children,
       shifts: db.shifts,
       notifications: db.notifications
@@ -233,40 +322,44 @@ export const store = {
   },
 
   // —— shifts ——
-  async addShift(user, { date, start, end, kids }) {
+  async addShift(user, { date, start, end, kids, label }, familyId) {
+    familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
       const { error } = await sb.from("shifts").insert({
-        family_id: user.familyId, date, start_time: start, end_time: end, kids, created_by: user.id,
+        family_id: familyId, date, start_time: start, end_time: end, kids,
+        label: label?.trim() || null, created_by: user.id, created_by_name: user.name,
       });
       if (error) throw new Error("Could not post the shift (is there already one on that day?).");
       return;
     }
     const db = readDB();
-    db.shifts[date] = { id: uid(), date, start, end, kids, coveredById: null, coveredByName: null };
+    db.shifts[date] = { id: uid(), date, start, end, kids, label: label?.trim() || "", coveredById: null, coveredByName: null, postedByName: user.name };
     writeDB(db);
   },
 
-  async updateShiftDetails(user, date, { start, end, kids }) {
+  async updateShiftDetails(user, date, { start, end, kids, label }, familyId) {
+    familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("shifts").update({ start_time: start, end_time: end, kids }).eq("family_id", user.familyId).eq("date", date);
+      await sb.from("shifts").update({ start_time: start, end_time: end, kids, label: label?.trim() || null }).eq("family_id", familyId).eq("date", date);
       return;
     }
     const db = readDB();
     if (db.shifts[date]) {
-      db.shifts[date] = { ...db.shifts[date], start, end, kids };
+      db.shifts[date] = { ...db.shifts[date], start, end, kids, label: label?.trim() || "" };
       writeDB(db);
     }
   },
 
-  async assignShift(user, date, member /* member object or null to clear */) {
+  async assignShift(user, date, member /* member object or null to clear */, familyId) {
+    familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
       await sb.from("shifts").update({
         covered_by_id: member ? member.id : null,
         covered_by_name: member ? member.name : null,
-      }).eq("family_id", user.familyId).eq("date", date);
+      }).eq("family_id", familyId).eq("date", date);
       return;
     }
     const db = readDB();
@@ -276,10 +369,11 @@ export const store = {
     }
   },
 
-  async deleteShift(user, date) {
+  async deleteShift(user, date, familyId) {
+    familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("shifts").delete().eq("family_id", user.familyId).eq("date", date);
+      await sb.from("shifts").delete().eq("family_id", familyId).eq("date", date);
       return;
     }
     const db = readDB();
@@ -288,12 +382,13 @@ export const store = {
   },
 
   // —— children ——
-  async addChild(user, name) {
+  async addChild(user, name, familyId) {
+    familyId = familyId || user.familyId;
     name = name.trim();
     if (!name) return;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("children").insert({ family_id: user.familyId, name });
+      await sb.from("children").insert({ family_id: familyId, name });
       return;
     }
     const db = readDB();
@@ -329,6 +424,27 @@ export const store = {
         db.shifts[d] = { ...db.shifts[d], coveredById: null, coveredByName: null };
       }
     });
+    writeDB(db);
+  },
+
+  // Add a family member who doesn't need their own login (e.g. a
+  // non-tech-savvy grandparent). They show up in the members list and can be
+  // assigned shifts, but can't sign in.
+  async addPlaceholderMember(user, { name, tag }, familyId) {
+    familyId = familyId || user.familyId;
+    name = (name || "").trim();
+    if (!name) throw new Error("Please enter a name.");
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      const { error } = await sb.from("members").insert({
+        family_id: familyId, name, email: null, password_hash: null,
+        role: "family", tag: tag?.trim() || "Family", is_placeholder: true,
+      });
+      if (error) throw new Error("Could not add that family member. Please try again.");
+      return;
+    }
+    const db = readDB();
+    db.members.push({ id: uid(), familyId: "local-family", name, email: null, role: "family", tag: tag?.trim() || "Family", isPlaceholder: true });
     writeDB(db);
   },
 
