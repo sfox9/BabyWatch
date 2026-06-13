@@ -10,8 +10,6 @@
 import { getSupabase, isCloudMode } from "./supabaseClient";
 import { fmt12, prettyDate } from "./time";
 
-export const FAMILY_CODE = "WATCH1";
-
 const LS_DB = "babywatch_db_v2";
 const LS_SESSION = "babywatch_session_v2";
 
@@ -25,6 +23,14 @@ async function hashPassword(pw) {
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+}
+
+// Random, unambiguous family invite code (no 0/O/1/I/L).
+function genFamilyCode() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
 }
 
 // ── device-mode storage ──────────────────────────────────────────────────────
@@ -63,7 +69,10 @@ function readSessionRef() {
 // ── shape mappers (cloud rows -> app objects) ───────────────────────────────
 
 function mapMember(r) {
-  return { id: r.id, familyId: r.family_id, name: r.name, email: r.email, role: r.role, tag: r.tag || "" };
+  return {
+    id: r.id, familyId: r.family_id, name: r.name, email: r.email, role: r.role, tag: r.tag || "",
+    familyCode: r.families?.code || r.familyCode || "",
+  };
 }
 
 function mapShift(r) {
@@ -89,42 +98,67 @@ export const store = {
     if (!ref) return null;
     if (isCloudMode()) {
       const sb = getSupabase();
-      const { data } = await sb.from("members").select("*").eq("id", ref.id).maybeSingle();
+      const { data } = await sb.from("members").select("*, families(code)").eq("id", ref.id).maybeSingle();
       return data ? mapMember(data) : null;
     }
     const db = readDB();
     const u = db.members.find((m) => m.id === ref.id);
-    return u ? { ...u, password: undefined } : null;
+    if (!u) return null;
+    const pub = { ...u, familyCode: db.familyCode || "" };
+    delete pub.password_hash;
+    return pub;
   },
 
+  // `code` is a family's invite code. If provided, the new member joins that
+  // family (used for family/nanny sign-ups and for adding a second parent).
+  // If a parent signs up with no code, a brand-new family is created with a
+  // freshly generated random code.
   async signUp({ name, email, password, role, tag, code }) {
     email = email.trim().toLowerCase();
     name = name.trim();
+    code = (code || "").trim().toUpperCase();
     if (!name || !email || !password) throw new Error("Please fill in all fields.");
-    if (role === "family" && (code || "").trim().toUpperCase() !== FAMILY_CODE) {
-      throw new Error("Invalid family code. Ask a parent for yours.");
+    if (role === "family" && !code) {
+      throw new Error("Please enter your family's invite code (ask a parent for it, or use their invite link).");
     }
     const password_hash = await hashPassword(password);
 
     if (isCloudMode()) {
       const sb = getSupabase();
-      const { data: fam, error: famErr } = await sb.from("families").select("*").eq("code", FAMILY_CODE).maybeSingle();
-      if (famErr || !fam) throw new Error("Family not found. Has the database been set up? (See README.)");
       const { data: existing } = await sb.from("members").select("id").eq("email", email).maybeSingle();
       if (existing) throw new Error("That email is already registered.");
+
+      let fam;
+      if (code) {
+        const { data: f } = await sb.from("families").select("*").eq("code", code).maybeSingle();
+        if (!f) throw new Error("That family code wasn't found. Double-check the code or invite link.");
+        fam = f;
+      } else {
+        for (let i = 0; i < 6 && !fam; i++) {
+          const tryCode = genFamilyCode();
+          const { data: created } = await sb.from("families").insert({ code: tryCode }).select().maybeSingle();
+          if (created) fam = created;
+        }
+        if (!fam) throw new Error("Could not create your family. Please try again.");
+      }
+
       const { data, error } = await sb
         .from("members")
         .insert({ family_id: fam.id, name, email, password_hash, role, tag: tag?.trim() || (role === "parent" ? "Parent" : "Family") })
         .select()
         .single();
       if (error) throw new Error("Could not create the account. Please try again.");
-      const user = mapMember(data);
+      const user = mapMember({ ...data, families: { code: fam.code } });
       saveSession(user);
       return user;
     }
 
     const db = readDB();
     if (db.members.find((m) => m.email === email)) throw new Error("That email is already registered.");
+    if (!db.familyCode) db.familyCode = genFamilyCode();
+    if (code && db.members.length && code !== db.familyCode) {
+      throw new Error("That family code doesn't match this device's family.");
+    }
     const user = {
       id: uid(),
       familyId: "local-family",
@@ -136,7 +170,7 @@ export const store = {
     };
     db.members.push(user);
     writeDB(db);
-    const pub = { ...user };
+    const pub = { ...user, familyCode: db.familyCode };
     delete pub.password_hash;
     saveSession(pub);
     return pub;
@@ -147,7 +181,7 @@ export const store = {
     const password_hash = await hashPassword(password);
     if (isCloudMode()) {
       const sb = getSupabase();
-      const { data } = await sb.from("members").select("*").eq("email", email).eq("password_hash", password_hash).maybeSingle();
+      const { data } = await sb.from("members").select("*, families(code)").eq("email", email).eq("password_hash", password_hash).maybeSingle();
       if (!data) throw new Error("Invalid email or password.");
       const user = mapMember(data);
       saveSession(user);
@@ -156,7 +190,7 @@ export const store = {
     const db = readDB();
     const u = db.members.find((m) => m.email === email && m.password_hash === password_hash);
     if (!u) throw new Error("Invalid email or password.");
-    const pub = { ...u };
+    const pub = { ...u, familyCode: db.familyCode || "" };
     delete pub.password_hash;
     saveSession(pub);
     return pub;
@@ -332,7 +366,9 @@ export const store = {
       return;
     }
     const db = readDB();
-    db.notifications = db.notifications.map((n) => (n.recipientId === user.id ? { ...n, read: true } : n));
+    db.notifications.forEach((n) => {
+      if (n.recipientId === user.id) n.read = true;
+    });
     writeDB(db);
   },
 
