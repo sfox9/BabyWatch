@@ -7,7 +7,8 @@ export default function UpcomingShifts({ shifts, onShiftClick }) {
   const today = todayKey();
   const upcoming = Object.entries(shifts)
     .filter(([k]) => k >= today)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([k, list]) => (list || []).map((shift) => [k, shift]))
+    .sort(([a, sa], [b, sb]) => a.localeCompare(b) || (sa.start || "").localeCompare(sb.start || ""))
     .slice(0, 6);
 
   return (
@@ -39,7 +40,7 @@ export default function UpcomingShifts({ shifts, onShiftClick }) {
         const [y, m, d] = key.split("-").map(Number);
         const weekday = DAYS[new Date(y, m - 1, d).getDay()];
         return (
-          <div key={key} onClick={() => onShiftClick(key)}
+          <div key={shift.id} onClick={() => onShiftClick(key)}
             style={{
               background: C.white, borderRadius: 14, padding: "12px 16px", marginBottom: 10,
               display: "flex", alignItems: "center", gap: 14, cursor: "pointer",
