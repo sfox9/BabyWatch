@@ -34,7 +34,7 @@ export default function NotificationsBell({ notifications, onOpen }) {
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 199 }} onClick={() => setOpen(false)} />
           <div style={{
-            position: "absolute", right: 0, top: 44, width: 300, maxWidth: "calc(100vw - 32px)",
+            position: "fixed", right: 12, top: 60, left: 12, marginLeft: "auto", width: "auto", maxWidth: 320,
             background: C.white, borderRadius: 16, border: `1.5px solid ${C.softBorder}`,
             boxShadow: "0 8px 30px rgba(61,43,31,0.15)", zIndex: 200, overflow: "hidden",
           }}>
