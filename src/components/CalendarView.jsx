@@ -81,6 +81,14 @@ export default function CalendarView({ shifts, currentUser, onDayClick, year, mo
                   }}>
                     {covered ? shift.coveredByName.split(" ")[0] : "Open"}
                   </div>
+                  {shift.label && (
+                    <div style={{
+                      fontSize: 8, fontFamily: fontSans, fontWeight: 700, textAlign: "center", color: C.clay,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1,
+                    }}>
+                      {shift.label}
+                    </div>
+                  )}
                   {shift.kids?.length > 0 && (
                     <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: 2, justifyContent: "center" }}>
                       {shift.kids.map((k) => (
