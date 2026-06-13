@@ -81,6 +81,7 @@ function mapMember(r) {
     familyCode: r.families?.code || r.familyCode || "",
     familyName: r.families?.name || r.familyName || "",
     isPlaceholder: Boolean(r.is_placeholder),
+    reminderOffsets: Array.isArray(r.reminder_offsets) ? r.reminder_offsets : (r.reminderOffsets || [1440, 60]),
   };
 }
 
@@ -360,7 +361,7 @@ export const store = {
     }
     const db = readDB();
     return {
-      members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag, isPlaceholder: Boolean(m.isPlaceholder) })),
+      members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag, isPlaceholder: Boolean(m.isPlaceholder), reminderOffsets: m.reminderOffsets || [1440, 60] })),
       children: db.children,
       shifts: db.shifts,
       notifications: db.notifications
@@ -508,6 +509,25 @@ export const store = {
     const db = readDB();
     db.members.push({ id: uid(), familyId: "local-family", name, email: null, role: "family", tag: tag?.trim() || "Family", isPlaceholder: true });
     writeDB(db);
+  },
+
+  // -- reminder preferences --
+  // `offsets` is an array of minutes-before-shift-start, e.g. [1440, 60] for
+  // "1 day before" and "1 hour before". Used by the scheduled reminder job.
+  async updateReminderOffsets(user, offsets) {
+    offsets = (offsets || []).filter((n) => Number.isFinite(n) && n >= 0);
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      const { error } = await sb.from("members").update({ reminder_offsets: offsets }).eq("id", user.id);
+      if (error) throw new Error("Could not save your reminder settings. Please try again.");
+      return;
+    }
+    const db = readDB();
+    const i = db.members.findIndex((m) => m.id === user.id);
+    if (i !== -1) {
+      db.members[i] = { ...db.members[i], reminderOffsets: offsets };
+      writeDB(db);
+    }
   },
 
   // -- notifications --
