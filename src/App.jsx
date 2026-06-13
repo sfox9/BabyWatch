@@ -40,7 +40,7 @@ export default function App() {
       setChildren(data.children);
       setShifts(data.shifts);
       setNotifications(data.notifications);
-    } catch (e) { /* transient network issue — keep current data */ }
+    } catch (e) { /* transient network issue - keep current data */ }
   }, [user, activeFamilyId]);
 
   async function refreshFamilies(u) {
@@ -73,12 +73,15 @@ export default function App() {
     return () => { unsub(); clearTimeout(refreshTimer.current); };
   }, [user, activeFamilyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── derived ──────────────────────────────────────────────────────────────
+  // -- derived --------------------------------------------------------------
 
   const viewingHome = !activeFamilyId || activeFamilyId === user?.familyId;
-  const isParent = Boolean(user && user.role === "parent" && viewingHome);
+  const activeFamily = families.find((f) => f.id === (activeFamilyId || user?.familyId));
+  const isParent = Boolean(
+    user && (viewingHome ? user.role === "parent" : activeFamily?.role === "parent")
+  );
 
-  // ── actions ────────────────────────────────────────────────────────────────
+  // -- actions ----------------------------------------------------------------
 
   function handleDayClick(key) {
     if (shifts[key]?.length) setShiftModalKey(key);
@@ -135,8 +138,13 @@ export default function App() {
     await store.markNotificationsRead(user);
   }
 
-  async function handleJoinFamily(code) {
-    await store.joinFamily(user, code);
+  async function handleJoinFamily(code, relationship) {
+    await store.joinFamily(user, code, relationship);
+    await refreshFamilies(user);
+  }
+
+  async function handleCreateFamily(info) {
+    await store.createFamily(user, info);
     await refreshFamilies(user);
   }
 
@@ -162,7 +170,7 @@ export default function App() {
     setMembers([]); setChildren([]); setShifts({}); setNotifications([]);
   }
 
-  // ── render ─────────────────────────────────────────────────────────────────
+  // -- render -----------------------------------------------------------------
 
   if (!booted) {
     return (
@@ -190,11 +198,9 @@ export default function App() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <NotificationsBell notifications={notifications} onOpen={handleNotificationsOpened} />
-          {isParent && (
-            <Btn small variant={view === "settings" ? "primary" : "ghost"} onClick={() => setView((v) => (v === "settings" ? "calendar" : "settings"))}>
-              {view === "settings" ? "Calendar" : "Settings"}
-            </Btn>
-          )}
+          <Btn small variant={view === "settings" ? "primary" : "ghost"} onClick={() => setView((v) => (v === "settings" ? "calendar" : "settings"))}>
+            {view === "settings" ? "Calendar" : "Settings"}
+          </Btn>
           <div style={{
             background: C.clay + "22", borderRadius: 20, padding: "5px 12px 5px 5px",
             fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.clay,
@@ -263,7 +269,8 @@ export default function App() {
               Hi, {user.name.split(" ")[0]}
               {!viewingHome && (
                 <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, fontWeight: 600 }}>
-                  {" "}— viewing {(() => { const f = families.find((f) => f.id === activeFamilyId); return f?.name || f?.code || "linked"; })()} calendar
+                  {" "}- viewing {activeFamily?.name || activeFamily?.code || "linked"} calendar
+                  {activeFamily?.relationship ? ` (as ${activeFamily.relationship})` : ""}
                 </span>
               )}
             </div>
@@ -275,12 +282,13 @@ export default function App() {
           </div>
         </div>
 
-        {view === "settings" && isParent ? (
+        {view === "settings" ? (
           <SettingsPanel
+            isParent={isParent}
             members={members}
             childrenList={children}
             shifts={shifts}
-            familyCode={user.familyCode}
+            familyCode={activeFamily?.code || user.familyCode}
             currentUser={user}
             families={families}
             onRemoveMember={async (id) => { await store.removeMember(user, id); refresh(); }}
@@ -289,6 +297,7 @@ export default function App() {
             onAddPlaceholderMember={async (info) => { await store.addPlaceholderMember(user, info, activeFamilyId); await refresh(); }}
             onJoinFamily={handleJoinFamily}
             onLeaveFamily={handleLeaveFamily}
+            onCreateFamily={handleCreateFamily}
             onRenameFamily={async (familyId, name) => { await store.setFamilyName(user, familyId, name); await refreshFamilies(user); if (familyId === user.familyId) setUser((u) => ({ ...u, familyName: name })); }}
           />
         ) : (
