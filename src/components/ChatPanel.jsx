@@ -90,11 +90,12 @@ export default function ChatPanel({
           : "dm:" + [user?.id, cur].sort().join("-");
       const matchesCurrent = incomingThread === viewingDbThread;
 
+      const isFromMe = payload?.new?.sender_id === user?.id;
       if (openRef.current && matchesCurrent) {
         loadMessages(); // refresh the thread in view
       } else {
-        setHasUnread(true); // badge: panel closed, or message is on a different thread
-        if (openRef.current) loadMessages(); // still refresh current thread in case sender also posts here
+        if (!isFromMe) setHasUnread(true); // badge only for others' messages
+        if (openRef.current) loadMessages(); // refresh current thread
       }
     });
     return unsub;
