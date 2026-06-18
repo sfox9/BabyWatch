@@ -325,17 +325,4 @@ export default function App() {
       />
       <AddShiftModal
         open={Boolean(addModalKey)} onClose={() => setAddModalKey(null)}
-        selectedDate={addModalKey} onAdd={handleAddShift} childrenList={children}
-      />
-      <ChatPanel
-        user={user}
-        members={members}
-        familyId={activeFamilyId || user.familyId}
-        isCloud={isCloudMode()}
-        onFetchMessages={(thread) => store.fetchMessages(user, activeFamilyId || user.familyId, thread)}
-        onSendMessage={(thread, body) => store.sendMessage(user, activeFamilyId || user.familyId, thread, body)}
-        onSubscribe={(cb) => store.subscribeToMessages(user, cb)}
-      />
-    </div>
-  );
-}
+        s
