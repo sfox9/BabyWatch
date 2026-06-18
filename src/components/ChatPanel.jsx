@@ -368,7 +368,7 @@ export default function ChatPanel({
             {/* Input bar */}
             {isCloud && (
               <div style={{
-                padding: "10px 12px 18px",
+                padding: "10px 12px max(18px, env(safe-area-inset-bottom, 18px))",
                 borderTop: `1.5px solid ${C.softBorder}`,
                 display: "flex", gap: 8, alignItems: "flex-end",
                 flexShrink: 0,
