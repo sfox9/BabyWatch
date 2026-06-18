@@ -1,4 +1,4 @@
-// BabyWatch — in-app family chat
+// BabyWatch â in-app family chat
 // Opens to an inbox showing the latest message per thread (sorted newest-first).
 // Tap a thread to read it; back button returns to inbox.
 // Red dots on inbox rows + thread chips indicate unread messages from others.
@@ -77,13 +77,13 @@ export default function ChatPanel({
       .map((m) => ({ id: m.id, label: m.name.split(" ")[0] })),
   ];
 
-  // Convert UI thread ID → DB thread key
+  // Convert UI thread ID â DB thread key
   function toDbThread(t) {
     if (t === "all" || t === "parents") return t;
     return "dm:" + [user?.id, t].sort().join("-");
   }
 
-  // Convert DB thread key → UI thread ID
+  // Convert DB thread key â UI thread ID
   function fromDbThread(dbThread) {
     if (dbThread === "all" || dbThread === "parents") return dbThread;
     if (dbThread.startsWith("dm:")) {
@@ -97,8 +97,8 @@ export default function ChatPanel({
 
   // Human-readable label for a DB thread key
   function threadLabel(dbThread) {
-    if (dbThread === "all") return "👨‍👩‍👧 Everyone";
-    if (dbThread === "parents") return "👪 Parents";
+    if (dbThread === "all") return "ð¨âð©âð§ Everyone";
+    if (dbThread === "parents") return "ðª Parents";
     if (dbThread.startsWith("dm:")) {
       const otherId = fromDbThread(dbThread);
       const member = (members || []).find((m) => m.id === otherId);
@@ -107,7 +107,7 @@ export default function ChatPanel({
     return dbThread;
   }
 
-  // ── data loaders ──────────────────────────────────────────────
+  // ââ data loaders ââââââââââââââââââââââââââââââââââââââââââââââ
 
   const loadInbox = useCallback(async () => {
     if (!isCloud || !onFetchInbox) return;
@@ -121,7 +121,7 @@ export default function ChatPanel({
     setMessages(msgs || []);
   }, [thread, onFetchMessages, isCloud]);
 
-  // ── panel open → land on inbox ────────────────────────────────
+  // ââ panel open â land on inbox ââââââââââââââââââââââââââââââââ
 
   useEffect(() => {
     if (!open) return;
@@ -130,7 +130,7 @@ export default function ChatPanel({
     loadInbox();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── entering a thread → load messages + clear its unread dot ─
+  // ââ entering a thread â load messages + clear its unread dot â
 
   useEffect(() => {
     if (!open || view !== "thread") return;
@@ -144,13 +144,16 @@ export default function ChatPanel({
     });
   }, [open, view, thread]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── realtime subscription ─────────────────────────────────────
+  // ââ realtime subscription âââââââââââââââââââââââââââââââââââââ
 
   useEffect(() => {
     if (!isCloud || !onSubscribe) return;
     const unsub = onSubscribe((payload) => {
       const incomingThread = payload?.new?.thread || "";
       const isFromMe = payload?.new?.sender_id === user?.id;
+
+      // Privacy: ignore DMs between other users that don't include the current user
+      if (incomingThread.startsWith("dm:") && !incomingThread.includes(user?.id)) return;
 
       if (!isFromMe) {
         setHasUnread(true);
@@ -168,13 +171,13 @@ export default function ChatPanel({
     return unsub;
   }, [isCloud]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── auto-scroll ───────────────────────────────────────────────
+  // ââ auto-scroll âââââââââââââââââââââââââââââââââââââââââââââââ
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── send ──────────────────────────────────────────────────────
+  // ââ send ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   async function handleSend() {
     const body = input.trim();
@@ -196,7 +199,7 @@ export default function ChatPanel({
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }
 
-  // ── helpers ───────────────────────────────────────────────────
+  // ââ helpers âââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   function formatDate(iso) {
     const d = new Date(iso);
@@ -237,11 +240,11 @@ export default function ChatPanel({
 
   const activeThread = threads.find((t) => t.id === thread) || threads[0];
 
-  // ── render ────────────────────────────────────────────────────
+  // ââ render ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   return (
     <>
-      {/* Floating chat button — only when panel is closed */}
+      {/* Floating chat button â only when panel is closed */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
@@ -296,7 +299,7 @@ export default function ChatPanel({
             height: "82vh", maxHeight: 660,
           }}>
 
-            {/* ── Header ── */}
+            {/* ââ Header ââ */}
             <div style={{
               padding: "14px 16px 0",
               borderBottom: `1.5px solid ${C.softBorder}`,
@@ -322,8 +325,8 @@ export default function ChatPanel({
                   )}
                   <span style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: C.warm }}>
                     {view === "inbox" ? "Family Chat" : (
-                      activeThread?.id === "all" ? "👨‍👩‍👧 Everyone"
-                      : activeThread?.id === "parents" ? "👪 Parents"
+                      activeThread?.id === "all" ? "ð¨âð©âð§ Everyone"
+                      : activeThread?.id === "parents" ? "ðª Parents"
                       : activeThread?.label
                     )}
                   </span>
@@ -340,7 +343,7 @@ export default function ChatPanel({
                 </button>
               </div>
 
-              {/* Thread chips — only in thread view */}
+              {/* Thread chips â only in thread view */}
               {view === "thread" && (
                 <div style={{
                   display: "flex", gap: 6, flexWrap: "nowrap",
@@ -364,12 +367,12 @@ export default function ChatPanel({
                           transition: "background 0.12s",
                         }}
                       >
-                        {t.id === "all" ? "👨‍👩‍👧 Everyone" : t.id === "parents" ? "👪 Parents" : t.label}
+                        {t.id === "all" ? "ð¨âð©âð§ Everyone" : t.id === "parents" ? "ðª Parents" : t.label}
                         {isUnread && (
                           <span style={{
                             position: "absolute", top: 3, right: 3,
                             width: 8, height: 8, borderRadius: "50%",
-                                              background: "#e53935", border: `2px solid ${thread === t.id ? C.clay : C.sand}`,
+                            background: "#e53935", border: `2px solid ${thread === t.id ? C.clay : C.sand}`,
                           }} />
                         )}
                       </button>
@@ -379,7 +382,7 @@ export default function ChatPanel({
               )}
             </div>
 
-            {/* ── Inbox view ── */}
+            {/* ââ Inbox view ââ */}
             {view === "inbox" && (
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {!isCloud && (
@@ -473,7 +476,7 @@ export default function ChatPanel({
                               fontFamily: fontSans, fontSize: 12, fontWeight: 600, color: C.warm,
                             }}
                           >
-                            {t.id === "all" ? "👨‍👩‍👧 Everyone" : t.id === "parents" ? "👪 Parents" : t.label}
+                            {t.id === "all" ? "ð¨âð©âð§ Everyone" : t.id === "parents" ? "ðª Parents" : t.label}
                           </button>
                         );
                       })}
@@ -483,7 +486,7 @@ export default function ChatPanel({
               </div>
             )}
 
-            {/* ── Thread view ── */}
+            {/* ââ Thread view ââ */}
             {view === "thread" && (
               <>
                 {/* Message list */}
@@ -497,7 +500,7 @@ export default function ChatPanel({
                       textAlign: "center", margin: "auto", padding: "32px 20px", lineHeight: 1.6,
                     }}>
                       No messages yet in <strong>{activeThread?.label}</strong>.<br />
-                      Say hi! 👋
+                      Say hi! ð
                     </div>
                   )}
 
@@ -576,7 +579,7 @@ export default function ChatPanel({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={`Message ${activeThread?.label || "family"}…`}
+                      placeholder={`Message ${activeThread?.label || "family"}â¦`}
                       rows={1}
                       style={{
                         flex: 1, resize: "none", overflowY: "hidden",
