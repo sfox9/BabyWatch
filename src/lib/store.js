@@ -597,7 +597,12 @@ export const store = {
       .channel("chat-" + (user?.familyId || "anon"))
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `family_id=eq.${user?.familyId}`,
+        },
         cb
       )
       .subscribe();
