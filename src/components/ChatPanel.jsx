@@ -44,6 +44,7 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [sendError, setSendError] = useState("");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -90,10 +91,13 @@ export default function ChatPanel({
     const body = input.trim();
     if (!body || sending) return;
     setSending(true);
+    setSendError("");
     try {
       await onSendMessage(thread, body);
       setInput("");
       await loadMessages();
+    } catch (e) {
+      setSendError(e?.message || "Failed to send. Please try again.");
     } finally {
       setSending(false);
     }
@@ -153,7 +157,7 @@ export default function ChatPanel({
           position: "fixed", bottom: 24, right: 20, zIndex: 200,
           width: 54, height: 54, borderRadius: "50%",
           background: C.clay, border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
+          display: open ? "none" : "flex", alignItems: "center", justifyContent: "center",
           boxShadow: "0 4px 18px rgba(0,0,0,0.22)",
           transition: "transform 0.15s ease, box-shadow 0.15s ease",
         }}
@@ -329,6 +333,17 @@ export default function ChatPanel({
               })}
               <div ref={bottomRef} />
             </div>
+
+            {/* Send error */}
+            {sendError && (
+              <div style={{
+                padding: "6px 14px", background: "#fdecea",
+                fontFamily: fontSans, fontSize: 12, color: "#b71c1c",
+                flexShrink: 0,
+              }}>
+                {sendError}
+              </div>
+            )}
 
             {/* Input bar */}
             {isCloud && (
