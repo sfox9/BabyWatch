@@ -545,6 +545,64 @@ export const store = {
     }
   },
 
+  // -- chat --
+  // Thread key convention:
+  //   'all'     → everyone in the family
+  //   'parents' → parents only
+  //   'dm:A-B'  → private DM (A and B are sorted UUIDs)
+  _dmThread(idA, idB) {
+    return "dm:" + [idA, idB].sort().join("-");
+  },
+
+  async fetchMessages(user, familyId, thread) {
+    if (!isCloudMode()) return [];
+    const sb = getSupabase();
+    familyId = familyId || user.familyId;
+    const dbThread =
+      thread === "all" || thread === "parents"
+        ? thread
+        : this._dmThread(user.id, thread);
+    const { data } = await sb
+      .from("messages")
+      .select("*")
+      .eq("family_id", familyId)
+      .eq("thread", dbThread)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    return data || [];
+  },
+
+  async sendMessage(user, familyId, thread, body) {
+    if (!isCloudMode()) return;
+    const sb = getSupabase();
+    familyId = familyId || user.familyId;
+    const dbThread =
+      thread === "all" || thread === "parents"
+        ? thread
+        : this._dmThread(user.id, thread);
+    await sb.from("messages").insert({
+      family_id: familyId,
+      sender_id: user.id,
+      sender_name: user.name,
+      thread: dbThread,
+      body,
+    });
+  },
+
+  subscribeToMessages(user, cb) {
+    if (!isCloudMode()) return () => {};
+    const sb = getSupabase();
+    const chan = sb
+      .channel("chat-" + (user?.familyId || "anon"))
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        cb
+      )
+      .subscribe();
+    return () => sb.removeChannel(chan);
+  },
+
   // -- notifications --
   async notify(user, recipients, message) {
     if (!recipients.length) return;
