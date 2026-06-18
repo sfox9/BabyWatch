@@ -47,6 +47,11 @@ export default function ChatPanel({
   const [sendError, setSendError] = useState("");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  // Refs so subscription callback always reads latest values without recreating
+  const openRef = useRef(open);
+  const threadRef = useRef(thread);
+  useEffect(() => { openRef.current = open; }, [open]);
+  useEffect(() => { threadRef.current = thread; }, [thread]);
 
   // Build thread list: fixed + one chip per non-placeholder non-self member
   const threads = [
@@ -72,15 +77,28 @@ export default function ChatPanel({
     setTimeout(() => inputRef.current?.focus(), 80);
   }, [open, thread]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime subscription — show unread badge when closed, reload when open
+  // Realtime subscription — badge when closed OR when message is on a different thread
   useEffect(() => {
     if (!isCloud || !onSubscribe) return;
-    const unsub = onSubscribe(() => {
-      if (open) loadMessages();
-      else setHasUnread(true);
+    const unsub = onSubscribe((payload) => {
+      const incomingThread = payload?.new?.thread || "";
+      // Compute the DB-format thread key for what the user is currently viewing
+      const cur = threadRef.current;
+      const viewingDbThread =
+        cur === "all" || cur === "parents"
+          ? cur
+          : "dm:" + [user?.id, cur].sort().join("-");
+      const matchesCurrent = incomingThread === viewingDbThread;
+
+      if (openRef.current && matchesCurrent) {
+        loadMessages(); // refresh the thread in view
+      } else {
+        setHasUnread(true); // badge: panel closed, or message is on a different thread
+        if (openRef.current) loadMessages(); // still refresh current thread in case sender also posts here
+      }
     });
     return unsub;
-  }, [open, isCloud]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isCloud]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -148,37 +166,39 @@ export default function ChatPanel({
 
   return (
     <>
-      {/* Floating chat button */}
-      <button
-        onClick={() => { setOpen((v) => !v); }}
-        title="Family chat"
-        aria-label="Open family chat"
-        style={{
-          position: "fixed", bottom: 24, right: 20, zIndex: 200,
-          width: 54, height: 54, borderRadius: "50%",
-          background: C.clay, border: "none", cursor: "pointer",
-          display: open ? "none" : "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 18px rgba(0,0,0,0.22)",
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "scale(1.1)";
-          e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.28)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "scale(1)";
-          e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.22)";
-        }}
-      >
-        <ChatBubbleIcon size={22} color={C.white} />
-        {hasUnread && (
-          <span style={{
-            position: "absolute", top: 7, right: 7,
-            width: 11, height: 11, borderRadius: "50%",
-            background: "#e53935", border: `2.5px solid ${C.white}`,
-          }} />
-        )}
-      </button>
+      {/* Floating chat button — only rendered when panel is closed */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          title="Family chat"
+          aria-label="Open family chat"
+          style={{
+            position: "fixed", bottom: 24, right: 20, zIndex: 150,
+            width: 54, height: 54, borderRadius: "50%",
+            background: C.clay, border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 18px rgba(0,0,0,0.22)",
+            transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.1)";
+            e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.28)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,0,0,0.22)";
+          }}
+        >
+          <ChatBubbleIcon size={22} color={C.white} />
+          {hasUnread && (
+            <span style={{
+              position: "absolute", top: 7, right: 7,
+              width: 11, height: 11, borderRadius: "50%",
+              background: "#e53935", border: `2.5px solid ${C.white}`,
+            }} />
+          )}
+        </button>
+      )}
 
       {/* Backdrop + panel */}
       {open && (
