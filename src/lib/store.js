@@ -511,6 +511,21 @@ export const store = {
     writeDB(db);
   },
 
+  // -- iCal subscription URL --
+  // Returns a stable URL that calendar apps (Skylite, Apple Calendar, Google
+  // Calendar, Outlook) can subscribe to. The URL is authenticated by the
+  // family's ical_token — anyone with the URL can read the shift calendar,
+  // so treat it like a shared link (not a secret password).
+  async getIcalUrl(user, familyId) {
+    familyId = familyId || user.familyId;
+    if (!isCloudMode()) return null;
+    const sb = getSupabase();
+    const { data: fam } = await sb.from("families").select("ical_token").eq("id", familyId).maybeSingle();
+    if (!fam?.ical_token) return null;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+    return `${supabaseUrl}/functions/v1/get-ical?token=${fam.ical_token}`;
+  },
+
   // -- reminder preferences --
   // `offsets` is an array of minutes-before-shift-start, e.g. [1440, 60] for
   // "1 day before" and "1 hour before". Used by the scheduled reminder job.
