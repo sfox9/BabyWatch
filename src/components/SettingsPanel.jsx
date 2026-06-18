@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { C, font, fontSans } from "../lib/theme";
 import { todayKey } from "../lib/time";
 import { Badge, Btn } from "./UI";
@@ -15,7 +15,7 @@ export default function SettingsPanel({
   isParent, members, childrenList, shifts, familyCode, currentUser,
   families, onRemoveMember, onAddChild, onRemoveChild,
   onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
-  onUpdateReminders,
+  onUpdateReminders, onGetIcalUrl,
 }) {
   const [renamingId, setRenamingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
@@ -43,6 +43,24 @@ export default function SettingsPanel({
   const [reminderOffsets, setReminderOffsets] = useState(currentUser.reminderOffsets || [1440, 60]);
   const [reminderSaved, setReminderSaved] = useState(false);
   const [reminderBusy, setReminderBusy] = useState(false);
+
+  const [icalUrl, setIcalUrl] = useState(null);
+  const [icalCopied, setIcalCopied] = useState(false);
+
+  // Load iCal URL lazily when the calendars tab is opened
+  useEffect(() => {
+    if (tab === "calendars" && !icalUrl && onGetIcalUrl) {
+      onGetIcalUrl().then((url) => setIcalUrl(url || ""));
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function copyIcalUrl() {
+    if (!icalUrl) return;
+    navigator.clipboard?.writeText(icalUrl).then(() => {
+      setIcalCopied(true);
+      setTimeout(() => setIcalCopied(false), 2000);
+    });
+  }
 
   const today = todayKey();
   const upcoming = Object.entries(shifts)
@@ -326,6 +344,33 @@ export default function SettingsPanel({
               )}
             </div>
           ))}
+
+          {icalUrl && (
+            <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", marginTop: 14, border: `1.5px solid ${C.softBorder}` }}>
+              <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 4 }}>
+                Sync with your calendar app
+              </div>
+              <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+                Copy this URL and paste it as a "Subscribe" or "Add calendar by URL" in Skylite, Apple Calendar, Google Calendar, or Outlook. Shifts will appear automatically and stay in sync.
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{
+                  flex: 1, minWidth: 0, background: C.sand, borderRadius: 8, padding: "8px 12px",
+                  fontFamily: "monospace", fontSize: 11, color: C.clay, wordBreak: "break-all", lineHeight: 1.5,
+                }}>
+                  {icalUrl}
+                </div>
+                <button onClick={copyIcalUrl} style={{
+                  background: icalCopied ? C.sage : C.clay, border: "none", borderRadius: 10,
+                  padding: "9px 16px", fontFamily: fontSans, fontSize: 13, fontWeight: 700,
+                  color: C.white, cursor: "pointer", flexShrink: 0,
+                }}>{icalCopied ? "Copied!" : "Copy URL"}</button>
+              </div>
+              <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 8 }}>
+                Keep this URL private — anyone with it can view your family's shift schedule.
+              </div>
+            </div>
+          )}
 
           <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", marginTop: 14, border: `1.5px dashed ${C.softBorder}` }}>
             <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 8 }}>
