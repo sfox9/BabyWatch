@@ -593,17 +593,17 @@ export const store = {
   subscribeToMessages(user, cb) {
     if (!isCloudMode()) return () => {};
     const sb = getSupabase();
+    const familyId = user?.familyId;
     const chan = sb
-      .channel("chat-" + (user?.familyId || "anon"))
+      .channel("chat-" + (familyId || "anon"))
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `family_id=eq.${user?.familyId}`,
-        },
-        cb
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          // Client-side family filter — only react to this family's messages
+          if (payload?.new?.family_id && payload.new.family_id !== familyId) return;
+          cb(payload);
+        }
       )
       .subscribe();
     return () => sb.removeChannel(chan);
