@@ -580,13 +580,14 @@ export const store = {
       thread === "all" || thread === "parents"
         ? thread
         : this._dmThread(user.id, thread);
-    await sb.from("messages").insert({
+    const { error } = await sb.from("messages").insert({
       family_id: familyId,
       sender_id: user.id,
       sender_name: user.name,
       thread: dbThread,
       body,
     });
+    if (error) throw new Error(error.message);
   },
 
   subscribeToMessages(user, cb) {
