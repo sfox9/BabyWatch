@@ -299,6 +299,8 @@ export default function App() {
             onLeaveFamily={handleLeaveFamily}
             onCreateFamily={handleCreateFamily}
             onRenameFamily={async (familyId, name) => { await store.setFamilyName(user, familyId, name); await refreshFamilies(user); if (familyId === user.familyId) setUser((u) => ({ ...u, familyName: name })); }}
+            onUpdateReminders={async (offsets) => { await store.updateReminderOffsets(user, offsets); setUser((u) => ({ ...u, reminderOffsets: offsets })); }}
+            onGetIcalUrl={() => store.getIcalUrl(user, activeFamilyId)}
           />
         ) : (
           <>
