@@ -523,7 +523,8 @@ export const store = {
     const { data: fam } = await sb.from("families").select("ical_token").eq("id", familyId).maybeSingle();
     if (!fam?.ical_token) return null;
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-    return `${supabaseUrl}/functions/v1/get-ical?token=${fam.ical_token}`;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return `${supabaseUrl}/functions/v1/get-ical?token=${fam.ical_token}&tz=${encodeURIComponent(tz)}`;
   },
 
   // -- reminder preferences --
