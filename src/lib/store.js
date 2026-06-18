@@ -573,6 +573,27 @@ export const store = {
     return data || [];
   },
 
+  // Returns the latest message from each thread, sorted newest-first.
+  // Used by the chat inbox view.
+  async fetchInbox(user, familyId) {
+    if (!isCloudMode()) return [];
+    const sb = getSupabase();
+    familyId = familyId || user.familyId;
+    const { data } = await sb
+      .from("messages")
+      .select("*")
+      .eq("family_id", familyId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    // One row per thread (most recent), already sorted newest-first
+    const seen = new Set();
+    const threads = [];
+    for (const msg of data || []) {
+      if (!seen.has(msg.thread)) { seen.add(msg.thread); threads.push(msg); }
+    }
+    return threads;
+  },
+
   async sendMessage(user, familyId, thread, body) {
     if (!isCloudMode()) return;
     const sb = getSupabase();
@@ -599,80 +620,4 @@ export const store = {
       .channel("chat-" + (familyId || "anon"))
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          // Client-side family filter — only react to this family's messages
-          if (payload?.new?.family_id && payload.new.family_id !== familyId) return;
-          cb(payload);
-        }
-      )
-      .subscribe();
-    return () => sb.removeChannel(chan);
-  },
-
-  // -- notifications --
-  async notify(user, recipients, message) {
-    if (!recipients.length) return;
-    if (isCloudMode()) {
-      const sb = getSupabase();
-      await sb.from("notifications").insert(
-        recipients.map((r) => ({ family_id: user.familyId, recipient_id: r.id, message }))
-      );
-      // Email via Edge Function (no-op until RESEND_API_KEY is configured)
-      try {
-        await sb.functions.invoke("send-email", {
-          body: {
-            to: recipients.map((r) => r.email).filter(Boolean),
-            subject: "BabyWatch update",
-            text: message,
-          },
-        });
-      } catch (e) { /* email is best-effort */ }
-      return;
-    }
-    const db = readDB();
-    recipients.forEach((r) => {
-      db.notifications.push({ id: uid(), recipientId: r.id, message, read: false, createdAt: new Date().toISOString() });
-    });
-    writeDB(db);
-  },
-
-  async markNotificationsRead(user) {
-    if (isCloudMode()) {
-      const sb = getSupabase();
-      await sb.from("notifications").update({ read: true }).eq("recipient_id", user.id).eq("read", false);
-      return;
-    }
-    const db = readDB();
-    db.notifications.forEach((n) => {
-      if (n.recipientId === user.id) n.read = true;
-    });
-    writeDB(db);
-  },
-
-  // -- realtime sync (cloud) / cross-tab sync (device) --
-  subscribe(user, onChange) {
-    if (isCloudMode()) {
-      const sb = getSupabase();
-      const channel = sb
-        .channel("babywatch-sync")
-        .on("postgres_changes", { event: "*", schema: "public" }, () => onChange())
-        .subscribe();
-      return () => sb.removeChannel(channel);
-    }
-    const handler = (e) => { if (e.key === LS_DB) onChange(); };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  },
-};
-
-// -- notification message builders -------------------------------------------
-
-export function shiftPostedMessage(poster, date, start, end, kids) {
-  const kidStr = kids?.length ? ` for ${kids.join(" and ")}` : "";
-  return `${poster.name} posted a new shift${kidStr} on ${prettyDate(date)}, ${fmt12(start)} to ${fmt12(end)}. Open the calendar to claim it.`;
-}
-
-export function shiftClaimedMessage(claimer, date) {
-  return `${claimer.name} (${claimer.tag || "family"}) claimed the shift on ${prettyDate(date)}.`;
-}
+        { 
