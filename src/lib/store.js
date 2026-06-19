@@ -514,7 +514,7 @@ export const store = {
   // -- iCal subscription URL --
   // Returns a stable URL that calendar apps (Skylite, Apple Calendar, Google
   // Calendar, Outlook) can subscribe to. The URL is authenticated by the
-  // family's ical_token — anyone with the URL can read the shift calendar,
+  // family's ical_token â anyone with the URL can read the shift calendar,
   // so treat it like a shared link (not a secret password).
   async getIcalUrl(user, familyId) {
     familyId = familyId || user.familyId;
@@ -548,9 +548,9 @@ export const store = {
 
   // -- chat --
   // Thread key convention:
-  //   'all'     → everyone in the family
-  //   'parents' → parents only
-  //   'dm:A-B'  → private DM (A and B are sorted UUIDs)
+  //   'all'     â everyone in the family
+  //   'parents' â parents only
+  //   'dm:A-B'  â private DM (A and B are sorted UUIDs)
   _dmThread(idA, idB) {
     return "dm:" + [idA, idB].sort().join("-");
   },
@@ -591,7 +591,11 @@ export const store = {
     for (const msg of data || []) {
       if (!seen.has(msg.thread)) { seen.add(msg.thread); threads.push(msg); }
     }
-    return threads;
+    // Privacy: hide DM threads the current user is not a participant in
+    return threads.filter((msg) => {
+      if (!msg.thread.startsWith("dm:")) return true;
+      return msg.thread.includes(user.id);
+    });
   },
 
   async sendMessage(user, familyId, thread, body) {
@@ -622,7 +626,7 @@ export const store = {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
-          // Client-side family filter — only react to this family's messages
+          // Client-side family filter â only react to this family's messages
           if (payload?.new?.family_id && payload.new.family_id !== familyId) return;
           cb(payload);
         }
