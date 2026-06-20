@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { C, fontSans, font } from "../lib/theme";
 
 // Emoji as Unicode escapes — avoids UTF-8 mojibake in JSX source files
-const EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // man+woman+girl family
+const _UNUSED_EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // man+woman+girl family
 const EMO_PARENTS = "\uD83D\uDC6A"; // family emoji
 
 const FIXED_THREADS = [
@@ -51,6 +51,36 @@ function PencilIcon({ size = 18, color = "currentColor" }) {
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
+  );
+}
+
+// Three-person "group" icon for the Everyone thread — a calmer, line-art
+// stand-in for the family emoji, matching the app's outlined icon style.
+function PeopleIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="7.5" r="3" />
+      <path d="M6.5 20v-0.8a5.5 5.5 0 0 1 11 0V20" />
+      <circle cx="4.5" cy="10.2" r="2.1" />
+      <path d="M1.5 20v-0.6a3.4 3.4 0 0 1 4.6-3.2" />
+      <circle cx="19.5" cy="10.2" r="2.1" />
+      <path d="M22.5 20v-0.6a3.4 3.4 0 0 0 -4.6-3.2" />
+    </svg>
+  );
+}
+
+// Wraps a plain-text thread label with the people icon whenever it's exactly
+// the "Everyone" group, so every render site (header, inbox rows, compose
+// picker) gets the icon for free without duplicating the check everywhere.
+function renderEveryoneAware(label, opts = {}) {
+  if (label !== "Everyone") return label;
+  const { size = 14, color = "currentColor" } = opts;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <PeopleIcon size={size} color={color} />
+      Everyone
+    </span>
   );
 }
 
@@ -122,7 +152,7 @@ export default function ChatPanel({
 
   // Human-readable label for a UI thread id (string or array of member ids)
   function labelForThread(t) {
-    if (t === "all") return EMO_ALL + " Everyone";
+    if (t === "all") return "Everyone";
     if (t === "parents") return EMO_PARENTS + " Parents";
     const ids = Array.isArray(t) ? t : [t];
     const names = ids.map((id) => (members || []).find((m) => m.id === id)?.name?.split(" ")[0] || "Someone");
@@ -131,7 +161,7 @@ export default function ChatPanel({
 
   // Human-readable label for a DB thread key (used in the inbox list)
   function threadLabel(dbThread) {
-    if (dbThread === "all") return EMO_ALL + " Everyone";
+    if (dbThread === "all") return "Everyone";
     if (dbThread === "parents") return EMO_PARENTS + " Parents";
     if (dbThread.startsWith("dm:")) return labelForThread(fromDbThread(dbThread));
     return dbThread;
@@ -319,8 +349,11 @@ export default function ChatPanel({
     displayItems.push({ type: "msg", msg });
   }
 
-  // Display label for whichever thread is currently open
-  const activeLabel = labelForThread(thread);
+  // Display label for whichever thread is currently open — JSX version (with
+  // the people icon for Everyone) for headings/empty-states, and a plain-text
+  // version for places that can't render JSX, like the textarea placeholder.
+  const activeLabelPlain = labelForThread(thread);
+  const activeLabel = renderEveryoneAware(activeLabelPlain, { size: 16, color: C.warm });
 
   // Recipients matching the compose "To:" search text — excludes anyone
   // already picked, and hides Everyone/Parents once a group is being built
@@ -499,7 +532,7 @@ export default function ChatPanel({
                           fontFamily: fontSans, fontSize: 13, fontWeight: isUnread ? 700 : 600,
                           color: C.warm, marginBottom: 3,
                         }}>
-                          {threadLabel(item.thread)}
+                          {renderEveryoneAware(threadLabel(item.thread), { size: 13, color: C.warm })}
                         </div>
                         <div style={{
                           fontFamily: fontSans, fontSize: 12,
@@ -598,7 +631,7 @@ export default function ChatPanel({
                       fontFamily: fontSans, fontSize: 14, fontWeight: 600, color: C.warm,
                     }}
                   >
-                    {t.id === "all" ? EMO_ALL + " Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label}
+                    {renderEveryoneAware(t.id === "all" ? "Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label)}
                   </button>
                 ))}
                 {selectedRecipients.length > 0 && (
@@ -711,7 +744,7 @@ export default function ChatPanel({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={`Message ${activeLabel || "family"}...`}
+                      placeholder={`Message ${activeLabelPlain || "family"}...`}
                       rows={1}
                       style={{
                         flex: 1, resize: "none", overflowY: "hidden",
