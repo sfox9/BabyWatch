@@ -11,9 +11,124 @@ const REMINDER_OPTIONS = [
   { minutes: 15, label: "15 minutes before" },
 ];
 
+const inputStyle = {
+  width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.softBorder}`,
+  borderRadius: 10, padding: "9px 12px", fontFamily: fontSans, fontSize: 14, color: C.text, outline: "none",
+};
+
+// A child profile card with an editable list of care notes
+// (bedtime routine, dinner plans, directions to practice, etc.).
+function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRemoveCareNote }) {
+  const notes = child.notes || [];
+  const [adding, setAdding] = useState(false);
+  const [addTitle, setAddTitle] = useState("");
+  const [addBody, setAddBody] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submitAdd() {
+    if (!addTitle.trim() && !addBody.trim()) return;
+    setBusy(true);
+    try {
+      await onAddCareNote(child.id, { title: addTitle, body: addBody });
+      setAddTitle(""); setAddBody(""); setAdding(false);
+    } finally { setBusy(false); }
+  }
+  function startEdit(note) {
+    setEditingId(note.id);
+    setEditTitle(note.title || "");
+    setEditBody(note.body || "");
+  }
+  async function submitEdit() {
+    setBusy(true);
+    try {
+      await onUpdateCareNote(child.id, editingId, { title: editTitle, body: editBody });
+      setEditingId(null);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ background: C.white, borderRadius: 12, padding: "12px 16px", marginBottom: 8, border: `1.5px solid ${C.softBorder}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontFamily: fontSans, fontSize: 15, fontWeight: 700, color: C.text }}>{child.name}</div>
+        <button onClick={() => onRemoveChild(child.id)} style={{
+          background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+          fontSize: 13, fontWeight: 700, padding: "2px 8px", borderRadius: 6, fontFamily: fontSans,
+        }}>Remove</button>
+      </div>
+      {/* Care notes */}
+      <div style={{ marginTop: 10, borderTop: `1px solid ${C.softBorder}`, paddingTop: 10 }}>
+        <div style={{ fontFamily: fontSans, fontSize: 10.5, fontWeight: 800, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+          Care Notes
+        </div>
+        {notes.length === 0 && !adding && (
+          <div style={{ fontFamily: fontSans, fontSize: 12.5, color: C.textMuted, marginBottom: 8 }}>
+            No care notes yet — add bedtime routines, dinner plans, directions, allergies, etc.
+          </div>
+        )}
+        {notes.map((note) => (
+          <div key={note.id} style={{ background: C.cream, borderRadius: 10, padding: "9px 11px", marginBottom: 7, border: `1px solid ${C.softBorder}` }}>
+            {editingId === note.id ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Title (e.g. Bedtime routine)" style={inputStyle} />
+                <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} placeholder="Details…" rows={3} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn small onClick={submitEdit} disabled={busy}>{busy ? "Saving…" : "Save"}</Btn>
+                  <button onClick={() => setEditingId(null)} style={{
+                    background: C.sand, border: "none", borderRadius: 10, padding: "8px 14px",
+                    fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
+                  }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {note.title && <div style={{ fontFamily: fontSans, fontSize: 13.5, fontWeight: 700, color: C.warm }}>{note.title}</div>}
+                  {note.body && <div style={{ fontFamily: fontSans, fontSize: 13, color: C.text, lineHeight: 1.5, marginTop: note.title ? 2 : 0, whiteSpace: "pre-wrap" }}>{note.body}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => startEdit(note)} style={{
+                    background: "none", border: "none", color: C.clay, cursor: "pointer",
+                    fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                  }}>Edit</button>
+                  <button onClick={() => onRemoveCareNote(child.id, note.id)} style={{
+                    background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+                    fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                  }}>Remove</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {adding ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 4 }}>
+            <input value={addTitle} onChange={(e) => setAddTitle(e.target.value)} placeholder="Title (e.g. Bedtime routine)" autoFocus style={inputStyle} />
+            <textarea value={addBody} onChange={(e) => setAddBody(e.target.value)} placeholder="Details…" rows={3} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn small onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : "Save note"}</Btn>
+              <button onClick={() => { setAdding(false); setAddTitle(""); setAddBody(""); }} style={{
+                background: C.sand, border: "none", borderRadius: 10, padding: "8px 14px",
+                fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
+              }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} style={{
+            background: "none", border: `1.5px dashed ${C.softBorder}`, borderRadius: 10, padding: "8px 12px",
+            fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.clay, cursor: "pointer", width: "100%",
+          }}>+ Add care note</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPanel({
   isParent, members, childrenList, shifts, familyCode, currentUser,
   families, onRemoveMember, onAddChild, onRemoveChild,
+  onAddCareNote, onUpdateCareNote, onRemoveCareNote,
   onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
   onUpdateReminders, onGetIcalUrl,
 }) {
@@ -270,16 +385,14 @@ export default function SettingsPanel({
             </div>
           )}
           {childrenList.map((c) => (
-            <div key={c.id} style={{
-              background: C.white, borderRadius: 12, padding: "11px 16px", marginBottom: 8,
-              display: "flex", alignItems: "center", justifyContent: "space-between", border: `1.5px solid ${C.softBorder}`,
-            }}>
-              <div style={{ fontFamily: fontSans, fontSize: 14, fontWeight: 600, color: C.text }}>{c.name}</div>
-              <button onClick={() => onRemoveChild(c.id)} style={{
-                background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
-                fontSize: 13, fontWeight: 700, padding: "2px 8px", borderRadius: 6, fontFamily: fontSans,
-              }}>Remove</button>
-            </div>
+            <ChildCard
+              key={c.id}
+              child={c}
+              onRemoveChild={onRemoveChild}
+              onAddCareNote={onAddCareNote}
+              onUpdateCareNote={onUpdateCareNote}
+              onRemoveCareNote={onRemoveCareNote}
+            />
           ))}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <input value={newChild} onChange={(e) => setNewChild(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addChild()}

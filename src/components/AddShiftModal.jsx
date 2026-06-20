@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { C, fontSans } from "../lib/theme";
 import { prettyDateFull } from "../lib/time";
 import { Btn, Input, Modal } from "./UI";
+import { CareNotePicker } from "./CareNotes";
 
 const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Work", "Doctor Visit", "Event", "Date Night", "Overnight"];
 
@@ -10,12 +11,14 @@ export default function AddShiftModal({ open, onClose, selectedDate, onAdd, chil
   const [end, setEnd] = useState("19:00");
   const [kids, setKids] = useState([]);
   const [label, setLabel] = useState("");
+  const [noteIds, setNoteIds] = useState([]);
 
   useEffect(() => {
-    if (open) { setKids(childrenList.map((c) => c.name)); setLabel(""); }
+    if (open) { setKids(childrenList.map((c) => c.name)); setLabel(""); setNoteIds([]); }
   }, [open, childrenList]);
 
   const toggleKid = (k) => setKids((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const toggleNote = (id) => setNoteIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   return (
     <Modal open={open} onClose={onClose} title="Post New Shift">
@@ -62,7 +65,8 @@ export default function AddShiftModal({ open, onClose, selectedDate, onAdd, chil
           )}
         </div>
 
-        <Btn onClick={() => { onAdd(selectedDate, { start, end, kids, label }); onClose(); }} style={{ width: "100%" }}>
+        <CareNotePicker childrenList={childrenList} kids={kids} selected={noteIds} onToggle={toggleNote} />
+        <Btn onClick={() => { onAdd(selectedDate, { start, end, kids, label, noteIds }); onClose(); }} style={{ width: "100%" }}>
           Post Shift
         </Btn>
       </div>

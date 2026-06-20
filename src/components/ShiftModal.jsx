@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { C, fontSans } from "../lib/theme";
 import { fmt12, prettyDateFull } from "../lib/time";
 import { Btn, Modal, Select, Input } from "./UI";
+import { CareNoteList, CareNotePicker } from "./CareNotes";
 
 const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Work", "Doctor Visit", "Event", "Date Night", "Overnight"];
 
@@ -12,12 +13,14 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
   const [end, setEnd] = useState(shift.end);
   const [kids, setKids] = useState(shift.kids || []);
   const [label, setLabel] = useState(shift.label || "");
+  const [noteIds, setNoteIds] = useState(shift.noteIds || []);
 
   useEffect(() => {
     setStart(shift.start);
     setEnd(shift.end);
     setKids(shift.kids || []);
     setLabel(shift.label || "");
+    setNoteIds(shift.noteIds || []);
     setEditing(false);
     setAssignId("");
   }, [shift]);
@@ -26,6 +29,7 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
   const covered = Boolean(shift.coveredByName);
   const mine = shift.coveredById === currentUser?.id;
   const toggleKid = (k) => setKids((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const toggleNote = (id) => setNoteIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   return (
     <div style={{ border: `1.5px solid ${C.softBorder}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -58,6 +62,9 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
           {covered ? `Covered by ${shift.coveredByName}` : "Open — needs coverage"}
         </div>
       </div>
+
+      {/* Care notes attached to this shift — visible to everyone, esp. caregivers */}
+      {!editing && <CareNoteList childrenList={childrenList} noteIds={shift.noteIds} />}
 
       {!isParent && !covered && (
         <Btn onClick={() => onClaim(shift)} variant="sage" style={{ width: "100%", marginBottom: 10 }}>
@@ -126,8 +133,9 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
                   </div>
                 </div>
               )}
+              <CareNotePicker childrenList={childrenList} kids={kids} selected={noteIds} onToggle={toggleNote} />
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn small onClick={() => { onUpdateDetails(shift, { start, end, kids, label }); setEditing(false); }}>Save Changes</Btn>
+                <Btn small onClick={() => { onUpdateDetails(shift, { start, end, kids, label, noteIds }); setEditing(false); }}>Save Changes</Btn>
                 <Btn small variant="secondary" onClick={() => setEditing(false)}>Cancel</Btn>
               </div>
             </>
