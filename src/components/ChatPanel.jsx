@@ -183,6 +183,16 @@ export default function ChatPanel({
     setMessages(msgs || []);
   }, [thread, onFetchMessages, isCloud]);
 
+  // Keep the latest loaders in refs so the long-lived realtime subscription
+  // (below) always calls the current version instead of the one captured
+  // when it first subscribed — otherwise it stays bound to whatever thread
+  // was active on mount and overwrites the message list with that thread's
+  // messages every time a new message arrives.
+  const loadMessagesRef = useRef(loadMessages);
+  const loadInboxRef = useRef(loadInbox);
+  useEffect(() => { loadMessagesRef.current = loadMessages; }, [loadMessages]);
+  useEffect(() => { loadInboxRef.current = loadInbox; }, [loadInbox]);
+
   // — panel open -> land on inbox —
 
   useEffect(() => {
@@ -230,13 +240,13 @@ export default function ChatPanel({
         setHasUnread(true);
         setUnreadThreads((prev) => new Set([...prev, incomingThread]));
         // Refresh inbox if it's currently showing
-        if (openRef.current && viewRef.current === "inbox") loadInbox();
+        if (openRef.current && viewRef.current === "inbox") loadInboxRef.current();
       }
 
       // Refresh thread messages if currently viewing this thread
       const viewingDbThread = toDbThread(threadRef.current);
       if (openRef.current && viewRef.current === "thread" && incomingThread === viewingDbThread) {
-        loadMessages();
+        loadMessagesRef.current();
       }
     });
     return unsub;
