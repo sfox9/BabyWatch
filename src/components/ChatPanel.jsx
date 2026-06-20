@@ -9,7 +9,7 @@ import { C, fontSans, font } from "../lib/theme";
 
 // Emoji as Unicode escapes — avoids UTF-8 mojibake in JSX source files
 const _UNUSED_EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // man+woman+girl family
-const EMO_PARENTS = "\uD83D\uDC6A"; // family emoji
+const _UNUSED_EMO_PARENTS = "\uD83D\uDC6A"; // family emoji
 
 const FIXED_THREADS = [
   { id: "all", label: "Everyone" },
@@ -70,16 +70,35 @@ function PeopleIcon({ size = 16, color = "currentColor" }) {
   );
 }
 
-// Wraps a plain-text thread label with the people icon whenever it's exactly
-// the "Everyone" group, so every render site (header, inbox rows, compose
-// picker) gets the icon for free without duplicating the check everywhere.
+// Two-person "parents" icon (with a small heart) — a calmer, line-art
+// stand-in for the family emoji, matching the app's outlined icon style.
+function ParentsIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7.3" cy="7" r="2.7" />
+      <path d="M2.3 20v-0.8a4.6 4.6 0 0 1 9.2 0V20" />
+      <circle cx="16.3" cy="6" r="3" />
+      <path d="M11 20v-0.9a5.3 5.3 0 0 1 10.5 0V20" />
+      <g transform="translate(6.55 11) scale(0.44)" strokeWidth="4">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+      </g>
+    </svg>
+  );
+}
+
+// Wraps a plain-text thread label with the matching icon whenever it's
+// exactly "Everyone" or "Parents", so every render site (header, inbox
+// rows, compose picker) gets the icon for free without duplicating the
+// check everywhere.
 function renderEveryoneAware(label, opts = {}) {
-  if (label !== "Everyone") return label;
+  if (label !== "Everyone" && label !== "Parents") return label;
   const { size = 14, color = "currentColor" } = opts;
+  const Icon = label === "Everyone" ? PeopleIcon : ParentsIcon;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-      <PeopleIcon size={size} color={color} />
-      Everyone
+      <Icon size={size} color={color} />
+      {label}
     </span>
   );
 }
@@ -153,7 +172,7 @@ export default function ChatPanel({
   // Human-readable label for a UI thread id (string or array of member ids)
   function labelForThread(t) {
     if (t === "all") return "Everyone";
-    if (t === "parents") return EMO_PARENTS + " Parents";
+    if (t === "parents") return "Parents";
     const ids = Array.isArray(t) ? t : [t];
     const names = ids.map((id) => (members || []).find((m) => m.id === id)?.name?.split(" ")[0] || "Someone");
     return names.join(", ") || "DM";
@@ -162,7 +181,7 @@ export default function ChatPanel({
   // Human-readable label for a DB thread key (used in the inbox list)
   function threadLabel(dbThread) {
     if (dbThread === "all") return "Everyone";
-    if (dbThread === "parents") return EMO_PARENTS + " Parents";
+    if (dbThread === "parents") return "Parents";
     if (dbThread.startsWith("dm:")) return labelForThread(fromDbThread(dbThread));
     return dbThread;
   }
@@ -631,7 +650,7 @@ export default function ChatPanel({
                       fontFamily: fontSans, fontSize: 14, fontWeight: 600, color: C.warm,
                     }}
                   >
-                    {renderEveryoneAware(t.id === "all" ? "Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label)}
+                    {renderEveryoneAware(t.id === "all" ? "Everyone" : t.id === "parents" ? "Parents" : t.label)}
                   </button>
                 ))}
                 {selectedRecipients.length > 0 && (
