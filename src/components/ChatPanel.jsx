@@ -8,8 +8,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { C, fontSans, font } from "../lib/theme";
 
 // Emoji as Unicode escapes — avoids UTF-8 mojibake in JSX source files
-const EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // 👨‍👩‍👧
-const EMO_PARENTS = "\uD83D\uDC6A"; // 👪
+const EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // man+woman+girl family
+const EMO_PARENTS = "\uD83D\uDC6A"; // family emoji
 
 const FIXED_THREADS = [
   { id: "all", label: "Everyone" },
@@ -75,6 +75,7 @@ export default function ChatPanel({
   const [unreadThreads, setUnreadThreads] = useState(new Set()); // DB thread keys
   const [sendError, setSendError] = useState("");
   const [recipientQuery, setRecipientQuery] = useState("");
+  const [selectedRecipients, setSelectedRecipients] = useState([]); // chips in compose, before starting a chat
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const composeInputRef = useRef(null);
@@ -94,44 +95,81 @@ export default function ChatPanel({
       .map((m) => ({ id: m.id, label: m.name.split(" ")[0] })),
   ];
 
-  // Convert UI thread ID → DB thread key
+  // Convert UI thread id (string "all"/"parents", a single member id, or an
+  // array of member ids for a DM/group) -> DB thread key. The key is a sorted,
+  // dash-joined list of every participant's id (including the current user),
+  // so a given set of people always maps to the same thread regardless of
+  // who started it or the order they were picked in.
   function toDbThread(t) {
     if (t === "all" || t === "parents") return t;
-    return "dm:" + [user?.id, t].sort().join("-");
+    const ids = Array.isArray(t) ? t : [t];
+    return "dm:" + [user?.id, ...ids].sort().join("-");
   }
 
-  // Convert DB thread key → UI thread ID
+  // Convert DB thread key -> UI thread id. For "dm:" keys this returns an
+  // array of the *other* participants' ids (every 36-char id chunk except
+  // the current user's).
   function fromDbThread(dbThread) {
     if (dbThread === "all" || dbThread === "parents") return dbThread;
     if (dbThread.startsWith("dm:")) {
       const rest = dbThread.slice(3);
-      const uuid1 = rest.slice(0, 36);
-      const uuid2 = rest.slice(37);
-      return uuid1 === user?.id ? uuid2 : uuid1;
+      const ids = [];
+      for (let i = 0; i < rest.length; i += 37) ids.push(rest.slice(i, i + 36));
+      return ids.filter((id) => id !== user?.id);
     }
     return dbThread;
   }
 
-  // Human-readable label for a DB thread key
+  // Human-readable label for a UI thread id (string or array of member ids)
+  function labelForThread(t) {
+    if (t === "all") return EMO_ALL + " Everyone";
+    if (t === "parents") return EMO_PARENTS + " Parents";
+    const ids = Array.isArray(t) ? t : [t];
+    const names = ids.map((id) => (members || []).find((m) => m.id === id)?.name?.split(" ")[0] || "Someone");
+    return names.join(", ") || "DM";
+  }
+
+  // Human-readable label for a DB thread key (used in the inbox list)
   function threadLabel(dbThread) {
     if (dbThread === "all") return EMO_ALL + " Everyone";
     if (dbThread === "parents") return EMO_PARENTS + " Parents";
-    if (dbThread.startsWith("dm:")) {
-      const otherId = fromDbThread(dbThread);
-      const member = (members || []).find((m) => m.id === otherId);
-      return member?.name || "DM";
-    }
+    if (dbThread.startsWith("dm:")) return labelForThread(fromDbThread(dbThread));
     return dbThread;
   }
 
-  // Open a conversation by UI thread id, switching to thread view
+  // Open a conversation by UI thread id (string or array of member ids),
+  // switching to thread view
   function openThread(id) {
     setThread(id);
     setView("thread");
     setRecipientQuery("");
+    setSelectedRecipients([]);
   }
 
-  // ── data loaders ──
+  // Add a recipient to the in-progress compose selection, or — for the fixed
+  // Everyone/Parents groups, when nothing else is selected yet — open that
+  // thread immediately, same as before.
+  function pickRecipient(t) {
+    if ((t.id === "all" || t.id === "parents")) {
+      if (selectedRecipients.length === 0) openThread(t.id);
+      return;
+    }
+    setSelectedRecipients((prev) => (prev.some((r) => r.id === t.id) ? prev : [...prev, t]));
+    setRecipientQuery("");
+    composeInputRef.current?.focus();
+  }
+
+  function removeRecipient(id) {
+    setSelectedRecipients((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  // Start a DM (1 person) or group chat (2+) from the selected compose chips
+  function startChatWithSelected() {
+    if (selectedRecipients.length === 0) return;
+    openThread(selectedRecipients.map((r) => r.id));
+  }
+
+  // — data loaders —
 
   const loadInbox = useCallback(async () => {
     if (!isCloud || !onFetchInbox) return;
@@ -145,24 +183,25 @@ export default function ChatPanel({
     setMessages(msgs || []);
   }, [thread, onFetchMessages, isCloud]);
 
-  // ── panel open → land on inbox ──
+  // — panel open -> land on inbox —
 
   useEffect(() => {
     if (!open) return;
     setView("inbox");
     setHasUnread(false);
     setRecipientQuery("");
+    setSelectedRecipients([]);
     loadInbox();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── entering compose → focus the recipient input ──
+  // — entering compose -> focus the recipient input —
 
   useEffect(() => {
     if (!open || view !== "compose") return;
     setTimeout(() => composeInputRef.current?.focus(), 80);
   }, [open, view]);
 
-  // ── entering a thread → load messages + clear its unread dot ─
+  // — entering a thread -> load messages + clear its unread dot —
 
   useEffect(() => {
     if (!open || view !== "thread") return;
@@ -176,7 +215,7 @@ export default function ChatPanel({
     });
   }, [open, view, thread]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── realtime subscription ──
+  // — realtime subscription —
 
   useEffect(() => {
     if (!isCloud || !onSubscribe) return;
@@ -203,13 +242,13 @@ export default function ChatPanel({
     return unsub;
   }, [isCloud]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── auto-scroll ──
+  // — auto-scroll —
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── send ──
+  // — send —
 
   async function handleSend() {
     const body = input.trim();
@@ -231,7 +270,7 @@ export default function ChatPanel({
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }
 
-  // ── helpers ──
+  // — helpers —
 
   function formatDate(iso) {
     const d = new Date(iso);
@@ -270,15 +309,20 @@ export default function ChatPanel({
     displayItems.push({ type: "msg", msg });
   }
 
-  const activeThread = threads.find((t) => t.id === thread) || threads[0];
+  // Display label for whichever thread is currently open
+  const activeLabel = labelForThread(thread);
 
-  // Recipients matching the compose "To:" search text
+  // Recipients matching the compose "To:" search text — excludes anyone
+  // already picked, and hides Everyone/Parents once a group is being built
+  // (those fixed groups can't be combined with hand-picked members)
   const filteredRecipients = threads.filter((t) => {
+    if (selectedRecipients.some((r) => r.id === t.id)) return false;
+    if (selectedRecipients.length > 0 && (t.id === "all" || t.id === "parents")) return false;
     const label = t.id === "all" ? "Everyone" : t.id === "parents" ? "Parents" : t.label;
     return label.toLowerCase().includes(recipientQuery.trim().toLowerCase());
   });
 
-  // ── render ──
+  // — render —
 
   return (
     <>
@@ -337,7 +381,7 @@ export default function ChatPanel({
             height: "82vh", maxHeight: 660,
           }}>
 
-            {/* ── Header ── */}
+            {/* — Header — */}
             <div style={{
               padding: "14px 16px 0",
               borderBottom: `1.5px solid ${C.softBorder}`,
@@ -350,7 +394,7 @@ export default function ChatPanel({
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {(view === "thread" || view === "compose") && (
                     <button
-                      onClick={() => { setView("inbox"); setRecipientQuery(""); loadInbox(); }}
+                      onClick={() => { setView("inbox"); setRecipientQuery(""); setSelectedRecipients([]); loadInbox(); }}
                       style={{
                         background: "none", border: "none", cursor: "pointer",
                         padding: "4px 6px 4px 2px", borderRadius: 8,
@@ -364,11 +408,7 @@ export default function ChatPanel({
                   <span style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: C.warm }}>
                     {view === "inbox" ? "Family Chat"
                       : view === "compose" ? "New Message"
-                      : (
-                        activeThread?.id === "all" ? EMO_ALL + " Everyone"
-                        : activeThread?.id === "parents" ? EMO_PARENTS + " Parents"
-                        : activeThread?.label
-                      )}
+                      : activeLabel}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -400,7 +440,7 @@ export default function ChatPanel({
               </div>
             </div>
 
-            {/* ── Inbox view ── */}
+            {/* — Inbox view — */}
             {view === "inbox" && (
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {!isCloud && (
@@ -473,17 +513,38 @@ export default function ChatPanel({
               </div>
             )}
 
-            {/* ── Compose view ── */}
+            {/* — Compose view — */}
             {view === "compose" && (
-              <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column" }}>
                 <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
+                  display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
                   marginBottom: 12, paddingBottom: 10,
                   borderBottom: `1.5px solid ${C.softBorder}`,
                 }}>
                   <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted }}>
                     To:
                   </span>
+                  {selectedRecipients.map((r) => (
+                    <span key={r.id} style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      background: C.sand, borderRadius: 16, padding: "4px 6px 4px 11px",
+                      fontFamily: fontSans, fontSize: 13, fontWeight: 600, color: C.warm,
+                    }}>
+                      {r.label}
+                      <button
+                        onClick={() => removeRecipient(r.id)}
+                        title={`Remove ${r.label}`}
+                        style={{
+                          width: 16, height: 16, borderRadius: "50%", border: "none",
+                          background: "transparent", color: C.textMuted, cursor: "pointer",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 14, lineHeight: 1, padding: 0,
+                        }}
+                      >
+                        x
+                      </button>
+                    </span>
+                  ))}
                   <input
                     ref={composeInputRef}
                     value={recipientQuery}
@@ -491,12 +552,18 @@ export default function ChatPanel({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        if (filteredRecipients[0]) openThread(filteredRecipients[0].id);
+                        if (recipientQuery.trim() && filteredRecipients[0]) {
+                          pickRecipient(filteredRecipients[0]);
+                        } else if (selectedRecipients.length > 0) {
+                          startChatWithSelected();
+                        }
+                      } else if (e.key === "Backspace" && !recipientQuery && selectedRecipients.length > 0) {
+                        removeRecipient(selectedRecipients[selectedRecipients.length - 1].id);
                       }
                     }}
-                    placeholder="Type a name…"
+                    placeholder={selectedRecipients.length ? "Add another..." : "Type a name..."}
                     style={{
-                      flex: 1, border: "none", outline: "none",
+                      flex: 1, minWidth: 80, border: "none", outline: "none",
                       fontFamily: fontSans, fontSize: 15, color: C.warm,
                       background: "transparent", padding: "4px 0",
                     }}
@@ -513,7 +580,7 @@ export default function ChatPanel({
                 {filteredRecipients.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => openThread(t.id)}
+                    onClick={() => pickRecipient(t)}
                     style={{
                       width: "100%", textAlign: "left", display: "flex", alignItems: "center",
                       padding: "12px 4px", background: "transparent", border: "none",
@@ -524,10 +591,24 @@ export default function ChatPanel({
                     {t.id === "all" ? EMO_ALL + " Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label}
                   </button>
                 ))}
+                {selectedRecipients.length > 0 && (
+                  <button
+                    onClick={startChatWithSelected}
+                    style={{
+                      marginTop: 14, padding: "11px 16px", borderRadius: 14, border: "none",
+                      background: C.clay, color: C.white, cursor: "pointer",
+                      fontFamily: fontSans, fontSize: 14, fontWeight: 700,
+                    }}
+                  >
+                    {selectedRecipients.length === 1
+                      ? `Start chat with ${selectedRecipients[0].label}`
+                      : `Start group chat (${selectedRecipients.length} people)`}
+                  </button>
+                )}
               </div>
             )}
 
-            {/* ── Thread view ── */}
+            {/* — Thread view — */}
             {view === "thread" && (
               <>
                 {/* Message list */}
@@ -540,8 +621,8 @@ export default function ChatPanel({
                       fontFamily: fontSans, fontSize: 13, color: C.textMuted,
                       textAlign: "center", margin: "auto", padding: "32px 20px", lineHeight: 1.6,
                     }}>
-                      No messages yet in <strong>{activeThread?.label}</strong>.<br />
-                      Say hi! 👋
+                      No messages yet in <strong>{activeLabel}</strong>.<br />
+                      Say hi!
                     </div>
                   )}
 
@@ -620,7 +701,7 @@ export default function ChatPanel({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={`Message ${activeThread?.label || "family"}…`}
+                      placeholder={`Message ${activeLabel || "family"}...`}
                       rows={1}
                       style={{
                         flex: 1, resize: "none", overflowY: "hidden",
