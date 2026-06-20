@@ -96,6 +96,7 @@ function mapShift(r) {
     coveredById: r.covered_by_id,
     coveredByName: r.covered_by_name,
     postedByName: r.created_by_name || "",
+    noteIds: r.note_ids || [],
   };
 }
 
@@ -352,9 +353,20 @@ export const store = {
         (shifts[r.date] = shifts[r.date] || []).push(mapShift(r));
       });
       Object.values(shifts).forEach((arr) => arr.sort((a, b) => (a.start || "").localeCompare(b.start || "")));
+      // Care notes are fetched defensively: if the table doesn't exist yet,
+      // the rest of the app still loads (children just show no notes).
+      let careRows = [];
+      try {
+        const { data } = await sb.from("care_notes").select("*").eq("family_id", familyId).order("created_at");
+        careRows = data || [];
+      } catch (e) { /* care_notes table not set up - ignore */ }
+      const notesByChild = {};
+      careRows.forEach((r) => {
+        (notesByChild[r.child_id] = notesByChild[r.child_id] || []).push({ id: r.id, title: r.title || "", body: r.body || "" });
+      });
       return {
         members: (mem.data || []).map(mapMember),
-        children: (kids.data || []).map((r) => ({ id: r.id, name: r.name })),
+        children: (kids.data || []).map((r) => ({ id: r.id, name: r.name, notes: notesByChild[r.id] || [] })),
         shifts,
         notifications: (notes.data || []).map((n) => ({ id: n.id, message: n.message, read: n.read, createdAt: n.created_at })),
       };
@@ -362,7 +374,7 @@ export const store = {
     const db = readDB();
     return {
       members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag, isPlaceholder: Boolean(m.isPlaceholder), reminderOffsets: m.reminderOffsets || [1440, 60] })),
-      children: db.children,
+      children: db.children.map((c) => ({ id: c.id, name: c.name, notes: c.notes || [] })),
       shifts: db.shifts,
       notifications: db.notifications
         .filter((n) => n.recipientId === user.id)
@@ -373,35 +385,40 @@ export const store = {
   },
 
   // -- shifts -- (a day can have multiple shifts; each is identified by id)
-  async addShift(user, { date, start, end, kids, label }, familyId) {
+  async addShift(user, { date, start, end, kids, label, noteIds }, familyId) {
     familyId = familyId || user.familyId;
+    noteIds = noteIds || [];
     if (isCloudMode()) {
       const sb = getSupabase();
       const { error } = await sb.from("shifts").insert({
         family_id: familyId, date, start_time: start, end_time: end, kids,
-        label: label?.trim() || null, created_by: user.id, created_by_name: user.name,
+        label: label?.trim() || null, note_ids: noteIds, created_by: user.id, created_by_name: user.name,
       });
       if (error) throw new Error("Could not post the shift. Please try again.");
       return;
     }
     const db = readDB();
     if (!db.shifts[date]) db.shifts[date] = [];
-    db.shifts[date].push({ id: uid(), date, start, end, kids, label: label?.trim() || "", coveredById: null, coveredByName: null, postedByName: user.name });
+    db.shifts[date].push({ id: uid(), date, start, end, kids, label: label?.trim() || "", noteIds, coveredById: null, coveredByName: null, postedByName: user.name });
     writeDB(db);
   },
 
-  async updateShiftDetails(user, shiftId, { start, end, kids, label }, familyId) {
+  async updateShiftDetails(user, shiftId, { start, end, kids, label, noteIds }, familyId) {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      await sb.from("shifts").update({ start_time: start, end_time: end, kids, label: label?.trim() || null }).eq("id", shiftId);
+      const patch = { start_time: start, end_time: end, kids, label: label?.trim() || null };
+      if (noteIds !== undefined) patch.note_ids = noteIds;
+      await sb.from("shifts").update(patch).eq("id", shiftId);
       return;
     }
     const db = readDB();
     for (const date of Object.keys(db.shifts)) {
       const i = (db.shifts[date] || []).findIndex((s) => s.id === shiftId);
       if (i !== -1) {
-        db.shifts[date][i] = { ...db.shifts[date][i], start, end, kids, label: label?.trim() || "" };
+        const patch = { start, end, kids, label: label?.trim() || "" };
+        if (noteIds !== undefined) patch.noteIds = noteIds;
+        db.shifts[date][i] = { ...db.shifts[date][i], ...patch };
         writeDB(db);
         return;
       }
@@ -455,7 +472,7 @@ export const store = {
       return;
     }
     const db = readDB();
-    db.children.push({ id: uid(), name });
+    db.children.push({ id: uid(), name, notes: [] });
     writeDB(db);
   },
 
@@ -467,6 +484,55 @@ export const store = {
     }
     const db = readDB();
     db.children = db.children.filter((c) => c.id !== childId);
+    writeDB(db);
+  },
+
+  // -- care notes (per child: bedtime routine, dinner plans, directions, etc) --
+  async addCareNote(user, childId, { title, body }, familyId) {
+    familyId = familyId || user.familyId;
+    title = (title || "").trim();
+    body = (body || "").trim();
+    if (!title && !body) return;
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      const { error } = await sb.from("care_notes").insert({
+        family_id: familyId, child_id: childId, title: title || null, body: body || null,
+      });
+      if (error) throw new Error("Could not save the care note. Please try again.");
+      return;
+    }
+    const db = readDB();
+    const child = db.children.find((c) => c.id === childId);
+    if (!child) return;
+    if (!Array.isArray(child.notes)) child.notes = [];
+    child.notes.push({ id: uid(), title, body });
+    writeDB(db);
+  },
+  async updateCareNote(user, childId, noteId, { title, body }, familyId) {
+    familyId = familyId || user.familyId;
+    title = (title || "").trim();
+    body = (body || "").trim();
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      await sb.from("care_notes").update({ title: title || null, body: body || null }).eq("id", noteId);
+      return;
+    }
+    const db = readDB();
+    const child = db.children.find((c) => c.id === childId);
+    if (!child || !Array.isArray(child.notes)) return;
+    const i = child.notes.findIndex((n) => n.id === noteId);
+    if (i !== -1) { child.notes[i] = { ...child.notes[i], title, body }; writeDB(db); }
+  },
+  async removeCareNote(user, childId, noteId, familyId) {
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      await sb.from("care_notes").delete().eq("id", noteId);
+      return;
+    }
+    const db = readDB();
+    const child = db.children.find((c) => c.id === childId);
+    if (!child || !Array.isArray(child.notes)) return;
+    child.notes = child.notes.filter((n) => n.id !== noteId);
     writeDB(db);
   },
 
