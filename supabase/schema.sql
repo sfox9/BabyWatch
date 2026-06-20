@@ -112,6 +112,28 @@ create table if not exists notifications (
   created_at timestamptz default now()
 );
 
+-- Family chat messages -------------------------------------------------------
+-- Thread key: 'all' = whole family, 'parents' = parents only,
+-- 'dm:<uuid>-<uuid>' = private DM (sorted UUIDs joined by dash).
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid not null references families(id) on delete cascade,
+  sender_id uuid references members(id) on delete set null,
+  sender_name text not null,
+  thread text not null default 'all',
+  body text not null,
+  created_at timestamptz default now()
+);
+alter table messages enable row level security;
+drop policy if exists "babywatch_all" on messages;
+create policy "babywatch_all" on messages for all using (true) with check (true);
+create index if not exists messages_family_thread_idx on messages(family_id, thread, created_at);
+do $$
+begin
+  alter publication supabase_realtime add table messages;
+exception when duplicate_object then null;
+end $$;
+
 -- Shift reminders ------------------------------------------------------------
 -- Tracks which (shift, member, offset) reminders have already been sent so the
 -- scheduled job never sends the same reminder twice.
@@ -195,3 +217,24 @@ select cron.schedule(
   );
   $$
 );
+
+-- Care notes (per child: bedtime routine, dinner plans, directions, etc.) ------
+create table if not exists care_notes (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid not null references families(id) on delete cascade,
+  child_id uuid not null references children(id) on delete cascade,
+  title text,
+  body text,
+  created_at timestamptz default now()
+);
+alter table care_notes enable row level security;
+drop policy if exists "babywatch_all" on care_notes;
+create policy "babywatch_all" on care_notes for all using (true) with check (true);
+do $$
+begin
+  alter publication supabase_realtime add table care_notes;
+exception when duplicate_object then null;
+end $$;
+
+-- Shifts: ids of care notes attached to a shift (shown to caregivers).
+alter table shifts add column if not exists note_ids uuid[] default '{}';
