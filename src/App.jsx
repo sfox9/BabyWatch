@@ -95,9 +95,9 @@ export default function App() {
     setAddModalKey(date);
   }
 
-  async function handleAddShift(date, { start, end, kids, label }) {
+  async function handleAddShift(date, { start, end, kids, label, noteIds }) {
     try {
-      await store.addShift(user, { date, start, end, kids, label }, activeFamilyId);
+      await store.addShift(user, { date, start, end, kids, label, noteIds }, activeFamilyId);
       await refresh();
       const recipients = members.filter((m) => m.role === "family" && m.id !== user.id);
       store.notify(user, recipients, shiftPostedMessage(user, date, start, end, kids));
@@ -296,6 +296,9 @@ export default function App() {
             onRemoveMember={async (id) => { await store.removeMember(user, id); refresh(); }}
             onAddChild={async (name) => { await store.addChild(user, name, activeFamilyId); refresh(); }}
             onRemoveChild={async (id) => { await store.removeChild(user, id); refresh(); }}
+            onAddCareNote={async (childId, note) => { await store.addCareNote(user, childId, note, activeFamilyId); await refresh(); }}
+            onUpdateCareNote={async (childId, noteId, note) => { await store.updateCareNote(user, childId, noteId, note, activeFamilyId); await refresh(); }}
+            onRemoveCareNote={async (childId, noteId) => { await store.removeCareNote(user, childId, noteId, activeFamilyId); await refresh(); }}
             onAddPlaceholderMember={async (info) => { await store.addPlaceholderMember(user, info, activeFamilyId); await refresh(); }}
             onJoinFamily={handleJoinFamily}
             onLeaveFamily={handleLeaveFamily}
