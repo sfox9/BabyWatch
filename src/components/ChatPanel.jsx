@@ -1,14 +1,15 @@
-// BabyWatch â in-app family chat
+// BabyWatch — in-app family chat
 // Opens to an inbox showing the latest message per thread (sorted newest-first).
 // Tap a thread to read it; back button returns to inbox.
-// Red dots on inbox rows + thread chips indicate unread messages from others.
+// Tap the pencil icon to compose — type a name in the "To:" field to pick a recipient.
+// Red dots on inbox rows indicate unread messages from others.
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { C, fontSans, font } from "../lib/theme";
 
-// Emoji as Unicode escapes â avoids UTF-8 mojibake in JSX source files
-const EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // ð¨âð©âð§
-const EMO_PARENTS = "\uD83D\uDC6A"; // ðª
+// Emoji as Unicode escapes — avoids UTF-8 mojibake in JSX source files
+const EMO_ALL = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"; // 👨‍👩‍👧
+const EMO_PARENTS = "\uD83D\uDC6A"; // 👪
 
 const FIXED_THREADS = [
   { id: "all", label: "Everyone" },
@@ -43,6 +44,16 @@ function BackIcon({ size = 16, color = "currentColor" }) {
   );
 }
 
+function PencilIcon({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
 export default function ChatPanel({
   user,
   members,
@@ -54,7 +65,7 @@ export default function ChatPanel({
   isCloud,
 }) {
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState("inbox"); // "inbox" | "thread"
+  const [view, setView] = useState("inbox"); // "inbox" | "thread" | "compose"
   const [thread, setThread] = useState("all");
   const [messages, setMessages] = useState([]);
   const [inboxItems, setInboxItems] = useState([]);
@@ -63,8 +74,10 @@ export default function ChatPanel({
   const [hasUnread, setHasUnread] = useState(false);
   const [unreadThreads, setUnreadThreads] = useState(new Set()); // DB thread keys
   const [sendError, setSendError] = useState("");
+  const [recipientQuery, setRecipientQuery] = useState("");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const composeInputRef = useRef(null);
   // Refs for stale-closure-safe subscription
   const openRef = useRef(open);
   const viewRef = useRef(view);
@@ -81,13 +94,13 @@ export default function ChatPanel({
       .map((m) => ({ id: m.id, label: m.name.split(" ")[0] })),
   ];
 
-  // Convert UI thread ID â DB thread key
+  // Convert UI thread ID → DB thread key
   function toDbThread(t) {
     if (t === "all" || t === "parents") return t;
     return "dm:" + [user?.id, t].sort().join("-");
   }
 
-  // Convert DB thread key â UI thread ID
+  // Convert DB thread key → UI thread ID
   function fromDbThread(dbThread) {
     if (dbThread === "all" || dbThread === "parents") return dbThread;
     if (dbThread.startsWith("dm:")) {
@@ -111,7 +124,14 @@ export default function ChatPanel({
     return dbThread;
   }
 
-  // ââ data loaders ââââââââââââââââââââââââââââââââââââââââââââââ
+  // Open a conversation by UI thread id, switching to thread view
+  function openThread(id) {
+    setThread(id);
+    setView("thread");
+    setRecipientQuery("");
+  }
+
+  // ── data loaders ──
 
   const loadInbox = useCallback(async () => {
     if (!isCloud || !onFetchInbox) return;
@@ -125,16 +145,24 @@ export default function ChatPanel({
     setMessages(msgs || []);
   }, [thread, onFetchMessages, isCloud]);
 
-  // ââ panel open â land on inbox ââââââââââââââââââââââââââââââââ
+  // ── panel open → land on inbox ──
 
   useEffect(() => {
     if (!open) return;
     setView("inbox");
     setHasUnread(false);
+    setRecipientQuery("");
     loadInbox();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ââ entering a thread â load messages + clear its unread dot â
+  // ── entering compose → focus the recipient input ──
+
+  useEffect(() => {
+    if (!open || view !== "compose") return;
+    setTimeout(() => composeInputRef.current?.focus(), 80);
+  }, [open, view]);
+
+  // ── entering a thread → load messages + clear its unread dot ─
 
   useEffect(() => {
     if (!open || view !== "thread") return;
@@ -148,7 +176,7 @@ export default function ChatPanel({
     });
   }, [open, view, thread]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ââ realtime subscription âââââââââââââââââââââââââââââââââââââ
+  // ── realtime subscription ──
 
   useEffect(() => {
     if (!isCloud || !onSubscribe) return;
@@ -175,13 +203,13 @@ export default function ChatPanel({
     return unsub;
   }, [isCloud]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ââ auto-scroll âââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── auto-scroll ──
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ââ send ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── send ──
 
   async function handleSend() {
     const body = input.trim();
@@ -203,7 +231,7 @@ export default function ChatPanel({
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }
 
-  // ââ helpers âââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── helpers ──
 
   function formatDate(iso) {
     const d = new Date(iso);
@@ -244,11 +272,17 @@ export default function ChatPanel({
 
   const activeThread = threads.find((t) => t.id === thread) || threads[0];
 
-  // ââ render ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Recipients matching the compose "To:" search text
+  const filteredRecipients = threads.filter((t) => {
+    const label = t.id === "all" ? "Everyone" : t.id === "parents" ? "Parents" : t.label;
+    return label.toLowerCase().includes(recipientQuery.trim().toLowerCase());
+  });
+
+  // ── render ──
 
   return (
     <>
-      {/* Floating chat button â only when panel is closed */}
+      {/* Floating chat button — only when panel is closed */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
@@ -303,7 +337,7 @@ export default function ChatPanel({
             height: "82vh", maxHeight: 660,
           }}>
 
-            {/* ââ Header ââ */}
+            {/* ── Header ── */}
             <div style={{
               padding: "14px 16px 0",
               borderBottom: `1.5px solid ${C.softBorder}`,
@@ -314,9 +348,9 @@ export default function ChatPanel({
                 justifyContent: "space-between", marginBottom: 12,
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {view === "thread" && (
+                  {(view === "thread" || view === "compose") && (
                     <button
-                      onClick={() => { setView("inbox"); loadInbox(); }}
+                      onClick={() => { setView("inbox"); setRecipientQuery(""); loadInbox(); }}
                       style={{
                         background: "none", border: "none", cursor: "pointer",
                         padding: "4px 6px 4px 2px", borderRadius: 8,
@@ -328,65 +362,45 @@ export default function ChatPanel({
                     </button>
                   )}
                   <span style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: C.warm }}>
-                    {view === "inbox" ? "Family Chat" : (
-                      activeThread?.id === "all" ? EMO_ALL + " Everyone"
-                      : activeThread?.id === "parents" ? EMO_PARENTS + " Parents"
-                      : activeThread?.label
-                    )}
+                    {view === "inbox" ? "Family Chat"
+                      : view === "compose" ? "New Message"
+                      : (
+                        activeThread?.id === "all" ? EMO_ALL + " Everyone"
+                        : activeThread?.id === "parents" ? EMO_PARENTS + " Parents"
+                        : activeThread?.label
+                      )}
                   </span>
                 </div>
-                <button
-                  onClick={() => setOpen(false)}
-                  style={{
-                    background: C.sand, border: "none", borderRadius: 20,
-                    padding: "5px 14px", fontFamily: fontSans, fontSize: 12,
-                    fontWeight: 700, color: C.textMuted, cursor: "pointer",
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-
-              {/* Thread chips â only in thread view */}
-              {view === "thread" && (
-                <div style={{
-                  display: "flex", gap: 6, flexWrap: "nowrap",
-                  overflowX: "auto", paddingBottom: 10,
-                  scrollbarWidth: "none",
-                }}>
-                  {threads.map((t) => {
-                    const dbT = toDbThread(t.id);
-                    const isUnread = unreadThreads.has(dbT);
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => setThread(t.id)}
-                        style={{
-                          flexShrink: 0, position: "relative",
-                          padding: "6px 14px", borderRadius: 20, border: "none",
-                          cursor: "pointer", fontFamily: fontSans, fontSize: 12,
-                          fontWeight: 700, whiteSpace: "nowrap",
-                          background: thread === t.id ? C.clay : C.sand,
-                          color: thread === t.id ? C.white : C.warm,
-                          transition: "background 0.12s",
-                        }}
-                      >
-                        {t.id === "all" ? EMO_ALL + " Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label}
-                        {isUnread && (
-                          <span style={{
-                            position: "absolute", top: 3, right: 3,
-                            width: 8, height: 8, borderRadius: "50%",
-                            background: "#e53935", border: `2px solid ${thread === t.id ? C.clay : C.sand}`,
-                          }} />
-                        )}
-                      </button>
-                    );
-                  })}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {view === "inbox" && (
+                    <button
+                      onClick={() => setView("compose")}
+                      title="New message"
+                      aria-label="Compose new message"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        padding: "4px 6px", borderRadius: 8,
+                        display: "flex", alignItems: "center", color: C.clay,
+                      }}
+                    >
+                      <PencilIcon size={18} color={C.clay} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setOpen(false)}
+                    style={{
+                      background: C.sand, border: "none", borderRadius: 20,
+                      padding: "5px 14px", fontFamily: fontSans, fontSize: 12,
+                      fontWeight: 700, color: C.textMuted, cursor: "pointer",
+                    }}
+                  >
+                    Close
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* ââ Inbox view ââ */}
+            {/* ── Inbox view ── */}
             {view === "inbox" && (
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {!isCloud && (
@@ -402,7 +416,7 @@ export default function ChatPanel({
                     fontFamily: fontSans, fontSize: 13, color: C.textMuted,
                     textAlign: "center", padding: "40px 20px", lineHeight: 1.6,
                   }}>
-                    No messages yet. Start a conversation below!
+                    No messages yet. Tap the pencil icon above to start a conversation!
                   </div>
                 )}
                 {isCloud && inboxItems.length > 0 && inboxItems.map((item) => {
@@ -411,7 +425,7 @@ export default function ChatPanel({
                   return (
                     <button
                       key={item.thread}
-                      onClick={() => { setThread(uiThread); setView("thread"); }}
+                      onClick={() => openThread(uiThread)}
                       style={{
                         width: "100%", display: "flex", alignItems: "center",
                         gap: 12, padding: "13px 16px",
@@ -456,41 +470,64 @@ export default function ChatPanel({
                     </button>
                   );
                 })}
-                {/* Quick-start buttons for threads with no messages yet */}
-                {isCloud && (
-                  <div style={{ padding: "12px 16px 8px" }}>
-                    <div style={{
-                      fontFamily: fontSans, fontSize: 11, color: C.textMuted,
-                      fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em",
-                    }}>
-                      New message
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {threads.map((t) => {
-                        const dbT = toDbThread(t.id);
-                        const alreadyShown = inboxItems.some(i => i.thread === dbT);
-                        if (alreadyShown) return null;
-                        return (
-                          <button
-                            key={t.id}
-                            onClick={() => { setThread(t.id); setView("thread"); }}
-                            style={{
-                              padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${C.softBorder}`,
-                              background: "transparent", cursor: "pointer",
-                              fontFamily: fontSans, fontSize: 12, fontWeight: 600, color: C.warm,
-                            }}
-                          >
-                            {t.id === "all" ? EMO_ALL + " Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
-            {/* ââ Thread view ââ */}
+            {/* ── Compose view ── */}
+            {view === "compose" && (
+              <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  marginBottom: 12, paddingBottom: 10,
+                  borderBottom: `1.5px solid ${C.softBorder}`,
+                }}>
+                  <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted }}>
+                    To:
+                  </span>
+                  <input
+                    ref={composeInputRef}
+                    value={recipientQuery}
+                    onChange={(e) => setRecipientQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filteredRecipients[0]) openThread(filteredRecipients[0].id);
+                      }
+                    }}
+                    placeholder="Type a name…"
+                    style={{
+                      flex: 1, border: "none", outline: "none",
+                      fontFamily: fontSans, fontSize: 15, color: C.warm,
+                      background: "transparent", padding: "4px 0",
+                    }}
+                  />
+                </div>
+                {filteredRecipients.length === 0 && (
+                  <div style={{
+                    fontFamily: fontSans, fontSize: 13, color: C.textMuted,
+                    textAlign: "center", padding: "24px 20px", lineHeight: 1.6,
+                  }}>
+                    No matches.
+                  </div>
+                )}
+                {filteredRecipients.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => openThread(t.id)}
+                    style={{
+                      width: "100%", textAlign: "left", display: "flex", alignItems: "center",
+                      padding: "12px 4px", background: "transparent", border: "none",
+                      borderBottom: `1px solid ${C.softBorder}`, cursor: "pointer",
+                      fontFamily: fontSans, fontSize: 14, fontWeight: 600, color: C.warm,
+                    }}
+                  >
+                    {t.id === "all" ? EMO_ALL + " Everyone" : t.id === "parents" ? EMO_PARENTS + " Parents" : t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* ── Thread view ── */}
             {view === "thread" && (
               <>
                 {/* Message list */}
@@ -504,7 +541,7 @@ export default function ChatPanel({
                       textAlign: "center", margin: "auto", padding: "32px 20px", lineHeight: 1.6,
                     }}>
                       No messages yet in <strong>{activeThread?.label}</strong>.<br />
-                      Say hi! ð
+                      Say hi! 👋
                     </div>
                   )}
 
@@ -583,7 +620,7 @@ export default function ChatPanel({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={`Message ${activeThread?.label || "family"}â¦`}
+                      placeholder={`Message ${activeThread?.label || "family"}…`}
                       rows={1}
                       style={{
                         flex: 1, resize: "none", overflowY: "hidden",
