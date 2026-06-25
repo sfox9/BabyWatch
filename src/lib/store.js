@@ -213,6 +213,33 @@ export const store = {
     clearSession();
   },
 
+  // Permanently delete the signed-in account. In cloud mode this removes the
+  // member row (family_links, notifications, and reminders cascade; covered
+  // shifts are freed via covered_by_id ON DELETE SET NULL). Children, shifts,
+  // and the family itself are left intact for the rest of the family.
+  async deleteAccount(user) {
+    if (!user?.id) return;
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      // free any shifts this member was covering, then remove their links + row
+      await sb.from("shifts").update({ covered_by_id: null, covered_by_name: null }).eq("covered_by_id", user.id);
+      await sb.from("family_links").delete().eq("member_id", user.id);
+      const { error } = await sb.from("members").delete().eq("id", user.id);
+      if (error) throw new Error("Could not delete your account. Please try again.");
+      clearSession();
+      return;
+    }
+    const db = readDB();
+    db.members = (db.members || []).filter((m) => m.id !== user.id);
+    Object.keys(db.shifts || {}).forEach((d) => {
+      db.shifts[d] = (db.shifts[d] || []).map((s) =>
+        s.coveredById === user.id ? { ...s, coveredById: null, coveredByName: null } : s
+      );
+    });
+    writeDB(db);
+    clearSession();
+  },
+
   // -- password recovery (cloud mode only) --
   async requestPasswordReset(email) {
     email = (email || "").trim().toLowerCase();
@@ -342,12 +369,25 @@ export const store = {
     familyId = familyId || user.familyId;
     if (isCloudMode()) {
       const sb = getSupabase();
-      const [mem, kids, sh, notes] = await Promise.all([
+      const [mem, kids, sh, notes, links] = await Promise.all([
         sb.from("members").select("*").eq("family_id", familyId).order("created_at"),
         sb.from("children").select("*").eq("family_id", familyId).order("created_at"),
         sb.from("shifts").select("*").eq("family_id", familyId),
         sb.from("notifications").select("*").eq("recipient_id", user.id).order("created_at", { ascending: false }).limit(30),
+        sb.from("family_links").select("relationship, role, members(*)").eq("family_id", familyId),
       ]);
+      // Members of this calendar = its "home" members PLUS anyone who linked this
+      // calendar from another family. Linked caregivers' title (tag) and role come
+      // from their family_links row, so their name/title shows on this calendar.
+      const memberMap = new Map();
+      (mem.data || []).forEach((r) => { const m = mapMember(r); memberMap.set(m.id, m); });
+      (links?.data || []).forEach((l) => {
+        if (!l.members) return;
+        const m = mapMember(l.members);
+        if (memberMap.has(m.id)) return;
+        memberMap.set(m.id, { ...m, role: l.role || "family", tag: l.relationship || m.tag });
+      });
+      const members = [...memberMap.values()];
       const shifts = {};
       (sh.data || []).forEach((r) => {
         (shifts[r.date] = shifts[r.date] || []).push(mapShift(r));
@@ -365,7 +405,7 @@ export const store = {
         (notesByChild[r.child_id] = notesByChild[r.child_id] || []).push({ id: r.id, title: r.title || "", body: r.body || "" });
       });
       return {
-        members: (mem.data || []).map(mapMember),
+        members,
         children: (kids.data || []).map((r) => ({ id: r.id, name: r.name, notes: notesByChild[r.id] || [] })),
         shifts,
         notifications: (notes.data || []).map((n) => ({ id: n.id, message: n.message, read: n.read, createdAt: n.created_at })),
