@@ -18,7 +18,7 @@ const inputStyle = {
 
 // A child profile card with an editable list of care notes
 // (bedtime routine, dinner plans, directions to practice, etc.).
-function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRemoveCareNote }) {
+function ChildCard({ child, canEdit = true, onRemoveChild, onAddCareNote, onUpdateCareNote, onRemoveCareNote }) {
   const notes = child.notes || [];
   const [adding, setAdding] = useState(false);
   const [addTitle, setAddTitle] = useState("");
@@ -53,10 +53,12 @@ function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRe
     <div style={{ background: C.white, borderRadius: 12, padding: "12px 16px", marginBottom: 8, border: `1.5px solid ${C.softBorder}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontFamily: fontSans, fontSize: 15, fontWeight: 700, color: C.text }}>{child.name}</div>
-        <button onClick={() => onRemoveChild(child.id)} style={{
-          background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
-          fontSize: 13, fontWeight: 700, padding: "2px 8px", borderRadius: 6, fontFamily: fontSans,
-        }}>Remove</button>
+        {canEdit && (
+          <button onClick={() => onRemoveChild(child.id)} style={{
+            background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+            fontSize: 13, fontWeight: 700, padding: "2px 8px", borderRadius: 6, fontFamily: fontSans,
+          }}>Remove</button>
+        )}
       </div>
       {/* Care notes */}
       <div style={{ marginTop: 10, borderTop: `1px solid ${C.softBorder}`, paddingTop: 10 }}>
@@ -65,7 +67,9 @@ function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRe
         </div>
         {notes.length === 0 && !adding && (
           <div style={{ fontFamily: fontSans, fontSize: 12.5, color: C.textMuted, marginBottom: 8 }}>
-            No care notes yet — add bedtime routines, dinner plans, directions, allergies, etc.
+            {canEdit
+              ? "No care notes yet — add bedtime routines, dinner plans, directions, allergies, etc."
+              : "No care notes for this child yet."}
           </div>
         )}
         {notes.map((note) => (
@@ -88,21 +92,23 @@ function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRe
                   {note.title && <div style={{ fontFamily: fontSans, fontSize: 13.5, fontWeight: 700, color: C.warm }}>{note.title}</div>}
                   {note.body && <div style={{ fontFamily: fontSans, fontSize: 13, color: C.text, lineHeight: 1.5, marginTop: note.title ? 2 : 0, whiteSpace: "pre-wrap" }}>{note.body}</div>}
                 </div>
-                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  <button onClick={() => startEdit(note)} style={{
-                    background: "none", border: "none", color: C.clay, cursor: "pointer",
-                    fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
-                  }}>Edit</button>
-                  <button onClick={() => onRemoveCareNote(child.id, note.id)} style={{
-                    background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
-                    fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
-                  }}>Remove</button>
-                </div>
+                {canEdit && (
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => startEdit(note)} style={{
+                      background: "none", border: "none", color: C.clay, cursor: "pointer",
+                      fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                    }}>Edit</button>
+                    <button onClick={() => onRemoveCareNote(child.id, note.id)} style={{
+                      background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+                      fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+                    }}>Remove</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         ))}
-        {adding ? (
+        {canEdit && (adding ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 4 }}>
             <input value={addTitle} onChange={(e) => setAddTitle(e.target.value)} placeholder="Title (e.g. Bedtime routine)" autoFocus style={inputStyle} />
             <textarea value={addBody} onChange={(e) => setAddBody(e.target.value)} placeholder="Details…" rows={3} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
@@ -119,7 +125,7 @@ function ChildCard({ child, onRemoveChild, onAddCareNote, onUpdateCareNote, onRe
             background: "none", border: `1.5px dashed ${C.softBorder}`, borderRadius: 10, padding: "8px 12px",
             fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.clay, cursor: "pointer", width: "100%",
           }}>+ Add care note</button>
-        )}
+        ))}
       </div>
     </div>
   );
@@ -130,7 +136,7 @@ export default function SettingsPanel({
   families, onRemoveMember, onAddChild, onRemoveChild,
   onAddCareNote, onUpdateCareNote, onRemoveCareNote,
   onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
-  onUpdateReminders, onGetIcalUrl,
+  onUpdateReminders, onGetIcalUrl, onDeleteAccount,
 }) {
   const [renamingId, setRenamingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
@@ -161,6 +167,12 @@ export default function SettingsPanel({
 
   const [icalUrl, setIcalUrl] = useState(null);
   const [icalCopied, setIcalCopied] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  // Warn if deleting would leave this calendar with no parent/admin.
+  const parentCount = (members || []).filter((m) => m.role === "parent").length;
+  const youAreParent = (members || []).some((m) => m.id === currentUser?.id && m.role === "parent");
+  const isLastParent = youAreParent && parentCount <= 1;
 
   // Load iCal URL lazily when the calendars tab is opened
   useEffect(() => {
@@ -308,7 +320,7 @@ export default function SettingsPanel({
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18, borderBottom: `1.5px solid ${C.softBorder}`, flexWrap: "wrap" }}>
-        {(isParent ? ["members", "children", "calendars", "notifications"] : ["calendars", "notifications"]).map((t) => (
+        {(isParent ? ["members", "children", "calendars", "notifications"] : ["children", "calendars", "notifications"]).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: "8px 20px", borderRadius: "10px 10px 0 0", border: "none", cursor: "pointer",
             fontFamily: fontSans, fontWeight: 700, fontSize: 13, textTransform: "capitalize",
@@ -316,7 +328,7 @@ export default function SettingsPanel({
             color: tab === t ? C.clay : C.textMuted,
             borderBottom: tab === t ? `2px solid ${C.clay}` : "none",
             marginBottom: tab === t ? "-1.5px" : "0",
-          }}>{t === "calendars" ? "Linked Calendars" : t}</button>
+          }}>{t === "calendars" ? "Linked Calendars" : t === "children" ? (isParent ? "Children" : "Care Notes") : t}</button>
         ))}
       </div>
 
@@ -379,31 +391,39 @@ export default function SettingsPanel({
 
       {tab === "children" && (
         <div>
+          {!isParent && (
+            <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+              Care notes the family has added for each child — bedtime routines, dinner plans, directions, allergies, and more.
+            </div>
+          )}
           {childrenList.length === 0 && (
             <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted, padding: "14px 16px", background: C.white, borderRadius: 12, border: `1.5px dashed ${C.softBorder}`, marginBottom: 8 }}>
-              Add your children below - their names will appear when posting shifts.
+              {isParent ? "Add your children below - their names will appear when posting shifts." : "No children have been added to this calendar yet."}
             </div>
           )}
           {childrenList.map((c) => (
             <ChildCard
               key={c.id}
               child={c}
+              canEdit={isParent}
               onRemoveChild={onRemoveChild}
               onAddCareNote={onAddCareNote}
               onUpdateCareNote={onUpdateCareNote}
               onRemoveCareNote={onRemoveCareNote}
             />
           ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <input value={newChild} onChange={(e) => setNewChild(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addChild()}
-              placeholder="Add child's name"
-              style={{
-                flex: 1, background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
-                padding: "10px 14px", fontFamily: fontSans, fontSize: 16, color: C.text, outline: "none",
-              }}
-            />
-            <Btn onClick={addChild} small>Add</Btn>
-          </div>
+          {isParent && (
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <input value={newChild} onChange={(e) => setNewChild(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addChild()}
+                placeholder="Add child's name"
+                style={{
+                  flex: 1, background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 10,
+                  padding: "10px 14px", fontFamily: fontSans, fontSize: 16, color: C.text, outline: "none",
+                }}
+              />
+              <Btn onClick={addChild} small>Add</Btn>
+            </div>
+          )}
         </div>
       )}
 
@@ -571,6 +591,53 @@ export default function SettingsPanel({
                 {reminderBusy ? "Saving..." : reminderSaved ? "Saved" : "Save"}
               </Btn>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Danger zone — delete account (always available to the signed-in user) */}
+      {onDeleteAccount && (
+        <div style={{ marginTop: 30, paddingTop: 18, borderTop: `1.5px solid ${C.softBorder}` }}>
+          <div style={{ fontFamily: fontSans, fontSize: 11, color: C.dustyRose, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+            Danger Zone
+          </div>
+          <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${C.dustyRose}55` }}>
+            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 4 }}>
+              Delete your account
+            </div>
+            <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+              Permanently removes your account, your links to any calendars, and your reminders. Shifts you were covering become open again. This can't be undone. Your family's calendar and other members are not affected.
+            </div>
+            {isLastParent && (
+              <div style={{
+                background: C.dustyRose + "1A", border: `1.5px solid ${C.dustyRose}66`, borderRadius: 10,
+                padding: "10px 12px", marginBottom: 12, fontFamily: fontSans, fontSize: 12.5, color: C.warm, lineHeight: 1.5,
+              }}>
+                <strong style={{ color: C.dustyRose }}>You're the only parent on this calendar.</strong> If you delete your account, no one will be able to manage it — post shifts, add children, or edit care notes. Consider adding another parent first.
+              </div>
+            )}
+            {!confirmingDelete ? (
+              <button onClick={() => setConfirmingDelete(true)} style={{
+                background: "none", border: `1.5px solid ${C.dustyRose}`, borderRadius: 10, padding: "9px 16px",
+                fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.dustyRose, cursor: "pointer",
+              }}>Delete my account</button>
+            ) : (
+              <div>
+                <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.dustyRose, marginBottom: 10 }}>
+                  Are you sure? This permanently deletes your account.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={async () => { setDeleteBusy(true); try { await onDeleteAccount(); } finally { setDeleteBusy(false); } }} disabled={deleteBusy} style={{
+                    background: C.dustyRose, border: "none", borderRadius: 10, padding: "9px 16px",
+                    fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.white, cursor: deleteBusy ? "default" : "pointer",
+                  }}>{deleteBusy ? "Deleting…" : "Yes, delete my account"}</button>
+                  <button onClick={() => setConfirmingDelete(false)} disabled={deleteBusy} style={{
+                    background: C.sand, border: "none", borderRadius: 10, padding: "9px 16px",
+                    fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
+                  }}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
