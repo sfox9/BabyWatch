@@ -172,6 +172,20 @@ export default function App() {
     setMembers([]); setChildren([]); setShifts({}); setNotifications([]);
   }
 
+  async function handleDeleteAccount() {
+    try {
+      await store.deleteAccount(user);
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    setUser(null);
+    setView("calendar");
+    setActiveFamilyId(null);
+    setFamilies([]);
+    setMembers([]); setChildren([]); setShifts({}); setNotifications([]);
+  }
+
   // -- render -----------------------------------------------------------------
 
   if (!booted) {
@@ -306,6 +320,7 @@ export default function App() {
             onRenameFamily={async (familyId, name) => { await store.setFamilyName(user, familyId, name); await refreshFamilies(user); if (familyId === user.familyId) setUser((u) => ({ ...u, familyName: name })); }}
             onUpdateReminders={async (offsets) => { await store.updateReminderOffsets(user, offsets); setUser((u) => ({ ...u, reminderOffsets: offsets })); }}
             onGetIcalUrl={() => store.getIcalUrl(user, activeFamilyId)}
+            onDeleteAccount={handleDeleteAccount}
           />
         ) : (
           <>
