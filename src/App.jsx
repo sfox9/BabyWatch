@@ -22,6 +22,7 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [children, setChildren] = useState([]);
   const [shifts, setShifts] = useState({});
+  const [emergencyInfo, setEmergencyInfo] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [view, setView] = useState("calendar");
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -41,6 +42,7 @@ export default function App() {
       setMembers(data.members);
       setChildren(data.children);
       setShifts(data.shifts);
+      setEmergencyInfo(data.emergencyInfo || "");
       setNotifications(data.notifications);
     } catch (e) { /* transient network issue - keep current data */ }
   }, [user, activeFamilyId]);
@@ -95,12 +97,18 @@ export default function App() {
     setAddModalKey(date);
   }
 
-  async function handleAddShift(date, { start, end, kids, label, noteIds }) {
+  async function handleAddShift(dates, { start, end, kids, label, noteIds }) {
+    const list = Array.isArray(dates) ? dates : [dates];
     try {
-      await store.addShift(user, { date, start, end, kids, label, noteIds }, activeFamilyId);
+      for (const date of list) {
+        await store.addShift(user, { date, start, end, kids, label, noteIds }, activeFamilyId);
+      }
       await refresh();
       const recipients = members.filter((m) => m.role === "family" && m.id !== user.id);
-      store.notify(user, recipients, shiftPostedMessage(user, date, start, end, kids));
+      const msg = list.length > 1
+        ? `${user.name} posted ${list.length} repeating shifts starting ${list[0]}.`
+        : shiftPostedMessage(user, list[0], start, end, kids);
+      store.notify(user, recipients, msg);
     } catch (e) {
       alert(e.message);
     }
@@ -170,6 +178,19 @@ export default function App() {
     setActiveFamilyId(null);
     setFamilies([]);
     setMembers([]); setChildren([]); setShifts({}); setNotifications([]);
+  }
+
+  async function handleUpdateEmergencyInfo(text) {
+    await store.updateEmergencyInfo(user, activeFamilyId, text);
+    await refresh();
+  }
+
+  async function handleRegenerateCode() {
+    const fid = activeFamilyId || user.familyId;
+    const newCode = await store.regenerateFamilyCode(user, fid);
+    if (fid === user.familyId) setUser((u) => ({ ...u, familyCode: newCode }));
+    await refreshFamilies(user);
+    return newCode;
   }
 
   async function handleDeleteAccount() {
@@ -264,7 +285,7 @@ export default function App() {
             background: C.sand + "66", border: `1.5px dashed ${C.softBorder}`, borderRadius: 12,
             padding: "9px 14px", marginBottom: 16, fontFamily: fontSans, fontSize: 12, color: C.textMuted, lineHeight: 1.5,
           }}>
-            Saved on this device only. To sync with the whole family and turn on email alerts, follow the free 10-minute setup in the README.
+            Saved on this device only. See the README to sync with your family and turn on email alerts.
           </div>
         )}
 
@@ -313,6 +334,7 @@ export default function App() {
             onAddCareNote={async (childId, note) => { await store.addCareNote(user, childId, note, activeFamilyId); await refresh(); }}
             onUpdateCareNote={async (childId, noteId, note) => { await store.updateCareNote(user, childId, noteId, note, activeFamilyId); await refresh(); }}
             onRemoveCareNote={async (childId, noteId) => { await store.removeCareNote(user, childId, noteId, activeFamilyId); await refresh(); }}
+            onUpdateChildMedical={async (childId, info) => { await store.updateChildMedical(user, childId, info, activeFamilyId); await refresh(); }}
             onAddPlaceholderMember={async (info) => { await store.addPlaceholderMember(user, info, activeFamilyId); await refresh(); }}
             onJoinFamily={handleJoinFamily}
             onLeaveFamily={handleLeaveFamily}
@@ -321,6 +343,9 @@ export default function App() {
             onUpdateReminders={async (offsets) => { await store.updateReminderOffsets(user, offsets); setUser((u) => ({ ...u, reminderOffsets: offsets })); }}
             onGetIcalUrl={() => store.getIcalUrl(user, activeFamilyId)}
             onDeleteAccount={handleDeleteAccount}
+            onRegenerateCode={handleRegenerateCode}
+            emergencyInfo={emergencyInfo}
+            onUpdateEmergencyInfo={handleUpdateEmergencyInfo}
           />
         ) : (
           <>
@@ -337,6 +362,7 @@ export default function App() {
         open={Boolean(shiftModalKey)} onClose={() => setShiftModalKey(null)}
         dateStr={shiftModalKey} shiftList={shiftModalKey ? shifts[shiftModalKey] || [] : []}
         currentUser={{ ...user, role: isParent ? "parent" : "family" }} members={members} childrenList={children}
+        emergencyInfo={emergencyInfo}
         onClaim={handleClaim} onUnclaim={handleUnclaim} onAssign={handleAssign}
         onDelete={handleDelete} onUpdateDetails={handleUpdateDetails}
         onAddAnother={isParent ? handleAddAnother : undefined}
