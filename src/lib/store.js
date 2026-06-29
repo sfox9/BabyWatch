@@ -322,6 +322,27 @@ export const store = {
     writeDB(db);
   },
 
+  // Generate a fresh random invite code for a family, invalidating the old one.
+  // Use when removing someone so they can't rejoin with the code they still have.
+  // Existing members aren't affected (they sign in with email/password).
+  async regenerateFamilyCode(user, familyId) {
+    familyId = familyId || user.familyId;
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      for (let i = 0; i < 8; i++) {
+        const tryCode = genFamilyCode();
+        const { data, error } = await sb.from("families").update({ code: tryCode }).eq("id", familyId).select().maybeSingle();
+        if (!error && data) return data.code;
+        if (error && error.code !== "23505") throw new Error("Could not generate a new code. Please try again.");
+      }
+      throw new Error("Could not generate a new code. Please try again.");
+    }
+    const db = readDB();
+    db.familyCode = genFamilyCode();
+    writeDB(db);
+    return db.familyCode;
+  },
+
   async joinFamily(user, code, relationship) {
     code = (code || "").trim().toUpperCase();
     if (!code) throw new Error("Please enter a family code.");
@@ -404,24 +425,47 @@ export const store = {
       careRows.forEach((r) => {
         (notesByChild[r.child_id] = notesByChild[r.child_id] || []).push({ id: r.id, title: r.title || "", body: r.body || "" });
       });
+      // Family-level emergency info (defensive: column may not exist yet).
+      let emergencyInfo = "";
+      try {
+        const { data } = await sb.from("families").select("emergency_info").eq("id", familyId).maybeSingle();
+        emergencyInfo = data?.emergency_info || "";
+      } catch (e) { /* emergency_info column not set up - ignore */ }
       return {
         members,
-        children: (kids.data || []).map((r) => ({ id: r.id, name: r.name, notes: notesByChild[r.id] || [] })),
+        children: (kids.data || []).map((r) => ({ id: r.id, name: r.name, notes: notesByChild[r.id] || [], allergies: r.allergies || "", medications: r.medications || "" })),
         shifts,
         notifications: (notes.data || []).map((n) => ({ id: n.id, message: n.message, read: n.read, createdAt: n.created_at })),
+        emergencyInfo,
       };
     }
     const db = readDB();
     return {
       members: db.members.map((m) => ({ id: m.id, familyId: m.familyId, name: m.name, email: m.email, role: m.role, tag: m.tag, isPlaceholder: Boolean(m.isPlaceholder), reminderOffsets: m.reminderOffsets || [1440, 60] })),
-      children: db.children.map((c) => ({ id: c.id, name: c.name, notes: c.notes || [] })),
+      children: db.children.map((c) => ({ id: c.id, name: c.name, notes: c.notes || [], allergies: c.allergies || "", medications: c.medications || "" })),
       shifts: db.shifts,
+      emergencyInfo: db.emergencyInfo || "",
       notifications: db.notifications
         .filter((n) => n.recipientId === user.id)
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         .slice(0, 30)
         .map((n) => ({ id: n.id, message: n.message, read: n.read, createdAt: n.createdAt })),
     };
+  },
+
+  // Family-level emergency info (parent phones, address, pediatrician, etc.),
+  // visible to everyone covering a shift.
+  async updateEmergencyInfo(user, familyId, text) {
+    familyId = familyId || user.familyId;
+    text = (text || "").trim();
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      await sb.from("families").update({ emergency_info: text || null }).eq("id", familyId);
+      return;
+    }
+    const db = readDB();
+    db.emergencyInfo = text;
+    writeDB(db);
   },
 
   // -- shifts -- (a day can have multiple shifts; each is identified by id)
@@ -512,8 +556,23 @@ export const store = {
       return;
     }
     const db = readDB();
-    db.children.push({ id: uid(), name, notes: [] });
+    db.children.push({ id: uid(), name, notes: [], allergies: "", medications: "" });
     writeDB(db);
+  },
+
+  // Update a child's safety info (allergies / current medications).
+  async updateChildMedical(user, childId, { allergies, medications }, familyId) {
+    familyId = familyId || user.familyId;
+    allergies = (allergies || "").trim();
+    medications = (medications || "").trim();
+    if (isCloudMode()) {
+      const sb = getSupabase();
+      await sb.from("children").update({ allergies: allergies || null, medications: medications || null }).eq("id", childId);
+      return;
+    }
+    const db = readDB();
+    const child = db.children.find((c) => c.id === childId);
+    if (child) { child.allergies = allergies; child.medications = medications; writeDB(db); }
   },
 
   async removeChild(user, childId) {
