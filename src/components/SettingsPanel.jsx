@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { C, font, fontSans } from "../lib/theme";
 import { todayKey } from "../lib/time";
-import { Badge, Btn } from "./UI";
+import { Badge, Btn, Modal } from "./UI";
 
 const REMINDER_OPTIONS = [
   { minutes: 1440, label: "1 day before" },
@@ -18,7 +18,7 @@ const inputStyle = {
 
 // A child profile card with an editable list of care notes
 // (bedtime routine, dinner plans, directions to practice, etc.).
-function ChildCard({ child, canEdit = true, onRemoveChild, onAddCareNote, onUpdateCareNote, onRemoveCareNote }) {
+function ChildCard({ child, canEdit = true, onRemoveChild, onAddCareNote, onUpdateCareNote, onRemoveCareNote, onUpdateChildMedical }) {
   const notes = child.notes || [];
   const [adding, setAdding] = useState(false);
   const [addTitle, setAddTitle] = useState("");
@@ -27,6 +27,25 @@ function ChildCard({ child, canEdit = true, onRemoveChild, onAddCareNote, onUpda
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Allergies & medications (safety info)
+  const [editingMed, setEditingMed] = useState(false);
+  const [medAllergies, setMedAllergies] = useState(child.allergies || "");
+  const [medMeds, setMedMeds] = useState(child.medications || "");
+  const [medBusy, setMedBusy] = useState(false);
+
+  function startEditMed() {
+    setMedAllergies(child.allergies || "");
+    setMedMeds(child.medications || "");
+    setEditingMed(true);
+  }
+  async function submitMed() {
+    setMedBusy(true);
+    try {
+      await onUpdateChildMedical(child.id, { allergies: medAllergies, medications: medMeds });
+      setEditingMed(false);
+    } finally { setMedBusy(false); }
+  }
 
   async function submitAdd() {
     if (!addTitle.trim() && !addBody.trim()) return;
@@ -127,6 +146,97 @@ function ChildCard({ child, canEdit = true, onRemoveChild, onAddCareNote, onUpda
           }}>+ Add care note</button>
         ))}
       </div>
+
+      {/* Allergies & medications (safety info) */}
+      <div style={{ marginTop: 10, borderTop: `1px solid ${C.softBorder}`, paddingTop: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontFamily: fontSans, fontSize: 10.5, fontWeight: 800, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Allergies & Medications
+          </span>
+          {canEdit && !editingMed && (
+            <button onClick={startEditMed} style={{
+              background: "none", border: "none", color: C.clay, cursor: "pointer",
+              fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+            }}>Edit</button>
+          )}
+        </div>
+        {editingMed ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <textarea value={medAllergies} onChange={(e) => setMedAllergies(e.target.value)} placeholder="Allergies (e.g. peanuts, penicillin)" rows={2} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+            <textarea value={medMeds} onChange={(e) => setMedMeds(e.target.value)} placeholder="Medications (name, dose, time)" rows={2} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn small onClick={submitMed} disabled={medBusy}>{medBusy ? "Saving…" : "Save"}</Btn>
+              <button onClick={() => setEditingMed(false)} style={{
+                background: C.sand, border: "none", borderRadius: 10, padding: "8px 14px",
+                fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
+              }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{
+              background: child.allergies ? C.dustyRose + "14" : "transparent",
+              border: child.allergies ? `1px solid ${C.dustyRose}44` : "none",
+              borderRadius: 8, padding: child.allergies ? "7px 10px" : 0,
+              fontFamily: fontSans, fontSize: 13, lineHeight: 1.5,
+            }}>
+              <span style={{ fontWeight: 800, color: child.allergies ? C.dustyRose : C.textMuted }}>Allergies: </span>
+              <span style={{ color: child.allergies ? C.warm : C.textMuted, whiteSpace: "pre-wrap" }}>{child.allergies || "None listed"}</span>
+            </div>
+            <div style={{ fontFamily: fontSans, fontSize: 13, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 800, color: C.textMuted }}>Medications: </span>
+              <span style={{ color: child.medications ? C.warm : C.textMuted, whiteSpace: "pre-wrap" }}>{child.medications || "None listed"}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Family-level emergency info (phones, address, pediatrician). Parents edit;
+// everyone — including caregivers — can read it.
+function EmergencyCard({ value, canEdit, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    try { await onSave(draft); setEditing(false); } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ background: C.white, borderRadius: 12, padding: "12px 16px", marginBottom: 14, border: `1.5px solid ${C.clay}44` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontFamily: fontSans, fontSize: 11, fontWeight: 800, color: C.clay, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Emergency Info
+        </span>
+        {canEdit && !editing && (
+          <button onClick={() => { setDraft(value || ""); setEditing(true); }} style={{
+            background: "none", border: "none", color: C.clay, cursor: "pointer",
+            fontSize: 12, fontWeight: 700, padding: "2px 6px", borderRadius: 6, fontFamily: fontSans,
+          }}>Edit</button>
+        )}
+      </div>
+      {editing ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4}
+            placeholder="Parent phone numbers, home address, pediatrician, anything a caregiver might need in an emergency."
+            style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn small onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Btn>
+            <button onClick={() => setEditing(false)} style={{
+              background: C.sand, border: "none", borderRadius: 10, padding: "8px 14px",
+              fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
+            }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontFamily: fontSans, fontSize: 13.5, color: value ? C.text : C.textMuted, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {value || (canEdit ? "Add phone numbers, address, and pediatrician so caregivers have them on hand." : "No emergency info added yet.")}
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +247,7 @@ export default function SettingsPanel({
   onAddCareNote, onUpdateCareNote, onRemoveCareNote,
   onAddPlaceholderMember, onJoinFamily, onLeaveFamily, onCreateFamily, onRenameFamily,
   onUpdateReminders, onGetIcalUrl, onDeleteAccount,
+  onUpdateChildMedical, emergencyInfo, onUpdateEmergencyInfo, onRegenerateCode,
 }) {
   const [renamingId, setRenamingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
@@ -169,6 +280,8 @@ export default function SettingsPanel({
   const [icalCopied, setIcalCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState(false);
+  const [regenBusy, setRegenBusy] = useState(false);
   // Warn if deleting would leave this calendar with no parent/admin.
   const parentCount = (members || []).filter((m) => m.role === "parent").length;
   const youAreParent = (members || []).some((m) => m.id === currentUser?.id && m.role === "parent");
@@ -300,9 +413,15 @@ export default function SettingsPanel({
             background: C.white, border: `1.5px solid ${C.softBorder}`, borderRadius: 14, padding: "3px 12px",
             fontFamily: fontSans, fontSize: 11, fontWeight: 700, color: linkCopied ? C.sage : C.warm, cursor: "pointer",
           }}>{linkCopied ? "Link copied" : "Copy invite link"}</button>
+          {isParent && onRegenerateCode && (
+            <button onClick={() => setRegenConfirm(true)} style={{
+              background: C.white, border: `1.5px solid ${C.dustyRose}66`, borderRadius: 14, padding: "3px 12px",
+              fontFamily: fontSans, fontSize: 11, fontWeight: 700, color: C.dustyRose, cursor: "pointer",
+            }}>New code</button>
+          )}
         </div>
         <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
-          Share the code or invite link with family members, nannies, or a second parent. Anyone who signs up with it joins this same family calendar.
+          Share the code or invite link to add family, nannies, or a second parent.
         </div>
       </div>
 
@@ -365,7 +484,7 @@ export default function SettingsPanel({
               Add a family member without an account
             </div>
             <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-              For someone who won't sign in themselves (e.g. a grandparent). You can still assign them shifts.
+              For someone who won't sign in (e.g. a grandparent). You can still assign them shifts.
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <div style={{ flex: 2, minWidth: 140 }}>
@@ -391,6 +510,7 @@ export default function SettingsPanel({
 
       {tab === "children" && (
         <div>
+          <EmergencyCard value={emergencyInfo} canEdit={isParent} onSave={onUpdateEmergencyInfo} />
           {!isParent && (
             <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
               Care notes the family has added for each child — bedtime routines, dinner plans, directions, allergies, and more.
@@ -410,6 +530,7 @@ export default function SettingsPanel({
               onAddCareNote={onAddCareNote}
               onUpdateCareNote={onUpdateCareNote}
               onRemoveCareNote={onRemoveCareNote}
+              onUpdateChildMedical={onUpdateChildMedical}
             />
           ))}
           {isParent && (
@@ -430,7 +551,7 @@ export default function SettingsPanel({
       {tab === "calendars" && (
         <div>
           <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-            Link another family's calendar - for example a sibling's - so you can switch between calendars and help cover their shifts too. Ask them for their family code in their Settings.
+            Link another family's calendar (e.g. a sibling's) to switch between them and help cover shifts. Ask them for their family code.
           </div>
           {(families || []).map((f) => (
             <div key={f.id} style={{
@@ -484,7 +605,7 @@ export default function SettingsPanel({
                 Sync with your calendar app
               </div>
               <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-                Copy this URL and paste it as a "Subscribe" or "Add calendar by URL" in Skylite, Apple Calendar, Google Calendar, or Outlook. Shifts will appear automatically and stay in sync.
+                Paste this URL into your calendar app (Apple, Google, Outlook, Skylite) as "Subscribe by URL" to keep shifts in sync.
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <div style={{
@@ -527,7 +648,7 @@ export default function SettingsPanel({
               <Btn small onClick={joinCalendar} disabled={joinBusy}>{joinBusy ? "Linking..." : "Link Calendar"}</Btn>
             </div>
             <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
-              Your title shows up when you're viewing this calendar (e.g. "viewing Smith Family calendar (as Auntie)").
+              Your title shows when you view this calendar (e.g. "as Auntie").
             </div>
             {joinErr && <div style={{ color: C.dustyRose, fontFamily: fontSans, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{joinErr}</div>}
           </div>
@@ -538,7 +659,7 @@ export default function SettingsPanel({
                 Create your own calendar
               </div>
               <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-                Start a brand-new calendar for your own kids - you'll be the parent/admin of this one, with your own family code to share.
+                Start a separate calendar for your own kids — you'll be its parent/admin with a new code to share.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 140 }}>
@@ -566,7 +687,7 @@ export default function SettingsPanel({
       {tab === "notifications" && (
         <div>
           <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-            When you're covering a shift, get a reminder before it starts - as an in-app notification and an email (if email alerts are set up).
+            Get a reminder before a shift you're covering — in-app and by email.
           </div>
           <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${C.softBorder}` }}>
             <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 10 }}>
@@ -595,52 +716,47 @@ export default function SettingsPanel({
         </div>
       )}
 
-      {/* Danger zone — delete account (always available to the signed-in user) */}
+      {/* Delete account — simple link; details live in the confirmation popup */}
       {onDeleteAccount && (
-        <div style={{ marginTop: 30, paddingTop: 18, borderTop: `1.5px solid ${C.softBorder}` }}>
-          <div style={{ fontFamily: fontSans, fontSize: 11, color: C.dustyRose, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-            Danger Zone
-          </div>
-          <div style={{ background: C.white, borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${C.dustyRose}55` }}>
-            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.warm, marginBottom: 4 }}>
-              Delete your account
-            </div>
-            <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-              Permanently removes your account, your links to any calendars, and your reminders. Shifts you were covering become open again. This can't be undone. Your family's calendar and other members are not affected.
-            </div>
-            {isLastParent && (
-              <div style={{
-                background: C.dustyRose + "1A", border: `1.5px solid ${C.dustyRose}66`, borderRadius: 10,
-                padding: "10px 12px", marginBottom: 12, fontFamily: fontSans, fontSize: 12.5, color: C.warm, lineHeight: 1.5,
-              }}>
-                <strong style={{ color: C.dustyRose }}>You're the only parent on this calendar.</strong> If you delete your account, no one will be able to manage it — post shifts, add children, or edit care notes. Consider adding another parent first.
-              </div>
-            )}
-            {!confirmingDelete ? (
-              <button onClick={() => setConfirmingDelete(true)} style={{
-                background: "none", border: `1.5px solid ${C.dustyRose}`, borderRadius: 10, padding: "9px 16px",
-                fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.dustyRose, cursor: "pointer",
-              }}>Delete my account</button>
-            ) : (
-              <div>
-                <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.dustyRose, marginBottom: 10 }}>
-                  Are you sure? This permanently deletes your account.
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={async () => { setDeleteBusy(true); try { await onDeleteAccount(); } finally { setDeleteBusy(false); } }} disabled={deleteBusy} style={{
-                    background: C.dustyRose, border: "none", borderRadius: 10, padding: "9px 16px",
-                    fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.white, cursor: deleteBusy ? "default" : "pointer",
-                  }}>{deleteBusy ? "Deleting…" : "Yes, delete my account"}</button>
-                  <button onClick={() => setConfirmingDelete(false)} disabled={deleteBusy} style={{
-                    background: C.sand, border: "none", borderRadius: 10, padding: "9px 16px",
-                    fontFamily: fontSans, fontSize: 13, fontWeight: 700, color: C.textMuted, cursor: "pointer",
-                  }}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
+        <div style={{ marginTop: 30, textAlign: "center" }}>
+          <button onClick={() => setConfirmingDelete(true)} style={{
+            background: "none", border: "none", color: C.dustyRose, cursor: "pointer",
+            fontFamily: fontSans, fontSize: 13, fontWeight: 700, padding: 8, textDecoration: "underline",
+          }}>Delete account</button>
         </div>
       )}
+
+      <Modal open={regenConfirm} onClose={() => { if (!regenBusy) setRegenConfirm(false); }} title="Generate a new code?">
+        <div style={{ fontFamily: fontSans, fontSize: 14, color: C.text, lineHeight: 1.6, marginBottom: 14 }}>
+          Your current family code and invite link will stop working right away. Anyone you've removed won't be able to rejoin with the old code. Current members stay connected.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={async () => { setRegenBusy(true); try { await onRegenerateCode(); setRegenConfirm(false); } finally { setRegenBusy(false); } }} disabled={regenBusy}>
+            {regenBusy ? "Generating…" : "Generate new code"}
+          </Btn>
+          <Btn variant="secondary" onClick={() => setRegenConfirm(false)} disabled={regenBusy}>Cancel</Btn>
+        </div>
+      </Modal>
+
+      <Modal open={confirmingDelete} onClose={() => { if (!deleteBusy) setConfirmingDelete(false); }} title="Delete account?">
+        <div style={{ fontFamily: fontSans, fontSize: 14, color: C.text, lineHeight: 1.6, marginBottom: 14 }}>
+          This permanently deletes your account and removes you from all calendars. Any shifts you're covering will reopen. This can't be undone.
+        </div>
+        {isLastParent && (
+          <div style={{
+            background: C.dustyRose + "1A", border: `1.5px solid ${C.dustyRose}66`, borderRadius: 10,
+            padding: "10px 12px", marginBottom: 14, fontFamily: fontSans, fontSize: 13, color: C.warm, lineHeight: 1.5,
+          }}>
+            <strong style={{ color: C.dustyRose }}>You're the only parent on this calendar.</strong> No one else will be able to manage it.
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="danger" onClick={async () => { setDeleteBusy(true); try { await onDeleteAccount(); } finally { setDeleteBusy(false); } }} disabled={deleteBusy}>
+            {deleteBusy ? "Deleting…" : "Delete account"}
+          </Btn>
+          <Btn variant="secondary" onClick={() => setConfirmingDelete(false)} disabled={deleteBusy}>Cancel</Btn>
+        </div>
+      </Modal>
 
     </div>
   );

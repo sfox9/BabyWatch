@@ -6,7 +6,7 @@ import { CareNoteList, CareNotePicker } from "./CareNotes";
 
 const LABEL_SUGGESTIONS = ["School Drop Off", "School Pick Up", "Work", "Doctor Visit", "Event", "Date Night", "Overnight"];
 
-function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim, onUnclaim, onAssign, onDelete, onUpdateDetails }) {
+function ShiftCard({ shift, dateStr, currentUser, members, childrenList, emergencyInfo, onClaim, onUnclaim, onAssign, onDelete, onUpdateDetails }) {
   const [assignId, setAssignId] = useState("");
   const [editing, setEditing] = useState(false);
   const [start, setStart] = useState(shift.start);
@@ -65,6 +65,18 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
 
       {/* Care notes attached to this shift — visible to everyone, esp. caregivers */}
       {!editing && <CareNoteList childrenList={childrenList} noteIds={shift.noteIds} />}
+
+      {/* Emergency info — family-level, shown to whoever is covering */}
+      {!editing && emergencyInfo && (
+        <div style={{ background: C.clay + "12", border: `1.5px solid ${C.clay}44`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: C.clay, marginBottom: 6, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Emergency Info
+          </div>
+          <div style={{ fontFamily: fontSans, fontSize: 13, color: C.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+            {emergencyInfo}
+          </div>
+        </div>
+      )}
 
       {!isParent && !covered && (
         <Btn onClick={() => onClaim(shift)} variant="sage" style={{ width: "100%", marginBottom: 10 }}>
@@ -148,6 +160,7 @@ function ShiftCard({ shift, dateStr, currentUser, members, childrenList, onClaim
 
 export default function ShiftModal({
   open, onClose, dateStr, shiftList, currentUser, members, childrenList,
+  emergencyInfo,
   onClaim, onUnclaim, onAssign, onDelete, onUpdateDetails, onAddAnother,
 }) {
   if (!dateStr) return null;
@@ -163,7 +176,7 @@ export default function ShiftModal({
         {(shiftList || []).map((shift) => (
           <ShiftCard
             key={shift.id} shift={shift} dateStr={dateStr} currentUser={currentUser}
-            members={members} childrenList={childrenList}
+            members={members} childrenList={childrenList} emergencyInfo={emergencyInfo}
             onClaim={(s) => { onClaim(s); }}
             onUnclaim={(s) => { onUnclaim(s); }}
             onAssign={(s, m) => onAssign(s, m)}
